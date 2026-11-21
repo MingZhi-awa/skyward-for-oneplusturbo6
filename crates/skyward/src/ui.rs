@@ -158,12 +158,21 @@ fn normal_max(max: u32) -> Result<u32> {
     // "qcom,mdss_dsi_m1_42_02_0a_dsc_cmd:"; the driver takes no name
     // without the colon either.
     let (name, _) = boot.trim().split_once(':').with_context(|| format!("{param} names no panel: {boot:?}"))?;
+    // On the Xiaomi kernels the panel's node is directly under soc. On OPLUS's
+    // it is under the display processor instead, as
+    // /proc/device-tree/soc/qcom,mdss_mdp@ae00000/<panel>, and the entry directly
+    // under soc that goes by the panel's name holds nothing but the driver's
+    // mark that the panel is the one in use. Both places are looked in, the
+    // nearer first, so a panel node's properties are found either way.
     let soc = Path::new("/proc/device-tree/soc");
-    let node = fs::read_dir(soc)
+    let entries = fs::read_dir(soc)
         .with_context(|| format!("read {}", soc.display()))?
-        .map(|e| e.map(|e| e.path().join(name)))
-        .collect::<std::io::Result<Vec<_>>>()?
-        .into_iter()
+        .collect::<std::io::Result<Vec<_>>>()?;
+    let mut places = vec![soc.to_path_buf()];
+    places.extend(entries.iter().map(|e| e.path()).filter(|p| p.is_dir()));
+    let node = places
+        .iter()
+        .map(|p| p.join(name))
         .find(|p| p.is_dir())
         .ok_or_else(|| anyhow!("panel {name} is not in the device tree"))?;
     let cell = |prop: &str| -> Result<u32> {
