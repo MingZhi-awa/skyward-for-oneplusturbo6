@@ -27,8 +27,57 @@ pub fn monotonic_ms() -> u64 {
     ts.tv_sec as u64 * 1000 + ts.tv_nsec as u64 / 1_000_000
 }
 
-fn set_nonblocking(fd: RawFd) -> io::Result<()> {
-    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+/// The command OPLUS's touch driver answers to turn its interrupt on, from
+/// vendor/oplus/kernel/tp/hbp/hbp/hbp_device.c:
+///
+/// ```c
+/// #define HBP_IOCTRL_GROUP      0xC5
+/// #define HBP_IOCTRL_IRQ_ENABLE _IO(HBP_IOCTRL_GROUP, 0x0A)
+/// ...
+/// case HBP_IOCTRL_IRQ_ENABLE:
+///     hbp_set_irq_status(hbp_dev, usr.val);
+/// ```
+const HBP_IOCTRL_IRQ_ENABLE: libc::c_int = 0xC50A;
+
+/// The node the report side of that driver answers on. Opening it does not
+/// put the panel in hbp mode, which only `/dev/hbp_core` does.
+const HBP_REPORT: &str = "/dev/hbp0";
+
+/// Turn the touchscreen's interrupt on.
+///
+/// On phones whose panel driver goes through OPLUS's hbp layer, the
+/// interrupt is left off until a program asks for it, and the kernel then
+/// reports touches to `/dev/input` as any other driver does. Nothing on the
+/// stock recovery asks, because the programs it starts for its own touch
+/// stack are not started here; without this the panel's interrupt never
+/// fires, and the UI shows its pages and takes no touch.
+///
+/// The driver takes a union whose first member is `int64_t val`, so the
+/// value goes at the start of what is handed over. Once set the interrupt
+/// stays on after the port is closed, so this runs once and lets go.
+pub fn wake_touch_interrupt() -> Result<()> {
+    let fd = unsafe { libc::open(c_path(HBP_REPORT)?.as_ptr(), libc::O_RDWR | libc::O_CLOEXEC) };
+    if fd < 0 {
+        return Err(io::Error::last_os_error()).with_context(|| format!("open {HBP_REPORT}"));
+    }
+    // The union the driver reads: int64_t val, then room for the structures
+    // of the other commands, which this one does not use.
+    let mut usr = [0u8; 128];
+    usr[..8].copy_from_slice(&1i64.to_ne_bytes());
+    let rc = unsafe { libc::ioctl(fd, HBP_IOCTRL_IRQ_ENABLE, usr.as_mut_ptr()) };
+    let err = io::Error::last_os_error();
+    unsafe { libc::close(fd) };
+    if rc < 0 {
+        return Err(err).with_context(|| format!("ask {HBP_REPORT} for the touchscreen's interrupt"));
+    }
+    Ok(())
+}
+
+fn c_path(path: &str) -> Result<CString> {
+    CString::new(path).context("a NUL in a path")
+}
+
+fn set_nonblocking(fd: RawFd) -> io::Result<()> {    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
         return Err(io::Error::last_os_error());
     }
@@ -195,6 +244,12 @@ pub struct Inputs {
 
 impl Inputs {
     pub fn open(w: u32, h: u32, touch_writes: Vec<Write>) -> Result<Self> {
+        // Before any device is taken in: a panel whose interrupt is off sends
+        // nothing to read. A phone without that driver has no node, which is
+        // no reason to fail.
+        if let Err(e) = wake_touch_interrupt() {
+            let _ = skyward_sys::kmsg(&format!("the touchscreen's interrupt stays as it was: {e:#}"));
+        }
         let fd = unsafe { libc::inotify_init1(libc::IN_NONBLOCK | libc::IN_CLOEXEC) };
         if fd < 0 {
             return Err(io::Error::last_os_error()).context("create inotify instance");
