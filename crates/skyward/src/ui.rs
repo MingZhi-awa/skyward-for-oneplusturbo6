@@ -1541,7 +1541,15 @@ impl<'a> Pages<'a> {
         // libraries the supplicant does not start, and the WLAN page says why.
         if let Some(w) = &cfg.wlan {
             self.app.state.wlan = Some(Wlan::default());
-            let modules = cfg.modules.sources.iter().map(|s| skyward_modules::source_dir(s)).collect::<Result<Vec<_>>>()?;
+            let modules = cfg
+                .modules
+                .sources
+                .iter()
+                .map(|s| skyward_modules::source_dirs(s))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
             let libraries = secure::libraries_or_none();
             self.wlan = Some(wlan::Worker::start(w.clone(), modules, libraries, self.servers.clone())?);
         }
