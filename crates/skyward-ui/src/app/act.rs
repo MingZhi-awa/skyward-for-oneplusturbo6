@@ -44,7 +44,9 @@ impl App {
             Action::Toggle(Switch::Wlan) => {
                 let w = self.state.wlan.as_mut().expect("the WLAN switch shows on a phone whose WLAN is brought up");
                 let on = matches!(w.power, Power::Off | Power::Failed(_));
-                *w = Wlan { power: if on { Power::Starting } else { Power::Off }, ..Wlan::default() };
+                // What is kept of the networks outlasts the switch moving.
+                let saved = std::mem::take(&mut w.saved);
+                *w = Wlan { power: if on { Power::Starting } else { Power::Off }, saved, ..Wlan::default() };
                 self.refresh();
                 return vec![Effect::Wlan(on)];
             }
@@ -395,6 +397,11 @@ impl App {
                 if w.joined.as_ref().is_some_and(|j| j.ssid == network.ssid) {
                     return self.act(Action::OpenJoined, now);
                 }
+                // A network whose password the recovery keeps joins without
+                // asking for it again.
+                if w.saved.iter().any(|s| s.ssid == network.ssid && s.security == network.security) {
+                    return vec![Effect::JoinSaved { ssid: network.ssid, name: network.name }];
+                }
                 match network.security {
                     Security::Wep => self.say(l.pick(texts::toast::WEP_UNSUPPORTED), now),
                     Security::Enterprise => self.say(l.pick(texts::toast::ENTERPRISE_UNSUPPORTED), now),
@@ -437,6 +444,10 @@ impl App {
             }
             Action::LeaveNetwork => {
                 let mut fx = self.back(now);
+                // Forgotten, the network is not joined again of itself.
+                if let Some(j) = self.state.wlan.as_ref().and_then(|w| w.joined.as_ref()) {
+                    fx.push(Effect::ForgetWlan { ssid: j.ssid.clone() });
+                }
                 fx.push(Effect::LeaveWlan);
                 return fx;
             }

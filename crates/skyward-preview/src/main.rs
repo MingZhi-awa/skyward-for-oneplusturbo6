@@ -591,7 +591,7 @@ fn main() -> Result<()> {
         ("131-home-light-wlan", Screen::Home, false, &|app| app.state.wlan = Some(joined(Joining::Connected(router_link())))),
         ("132-wlan-light-off", Screen::Wlan, false, &|app| app.state.wlan = Some(Wlan::default())),
         ("133-wlan-dark-starting", Screen::Wlan, true, &|app| app.state.wlan = Some(Wlan { power: Power::Starting, ..Wlan::default() })),
-        ("134-wlan-light-nearby", Screen::Wlan, false, &|app| app.state.wlan = Some(Wlan { power: Power::On, networks: nearby(), joined: None })),
+        ("134-wlan-light-nearby", Screen::Wlan, false, &|app| app.state.wlan = Some(Wlan { power: Power::On, networks: nearby(), joined: None, saved: Vec::new() })),
         ("135-wlan-light-joined", Screen::Wlan, false, &|app| app.state.wlan = Some(joined(Joining::Connected(router_link())))),
         ("136-wlan-dark-wrong-password", Screen::Wlan, true, &|app| app.state.wlan = Some(joined(Joining::WrongPassword))),
         ("137-wlan-light-addressing", Screen::Wlan, false, &|app| app.state.wlan = Some(joined(Joining::Addressing))),
@@ -1431,7 +1431,7 @@ fn nearby() -> Vec<Network> {
 fn joined(stage: Joining) -> Wlan {
     let n = nearby();
     let j = Joined { ssid: n[0].ssid.clone(), name: n[0].name.clone(), security: n[0].security, stage };
-    Wlan { power: Power::On, networks: n, joined: Some(j) }
+    Wlan { power: Power::On, networks: n, joined: Some(j), saved: Vec::new() }
 }
 
 /// What a home router gave the 13 Ultra.

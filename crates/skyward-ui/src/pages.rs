@@ -2593,12 +2593,17 @@ pub fn wlan_network(cx: &Ctx) -> Frame {
     let security = detail(Outline::Shield, l.pick(texts::wlan::SECURITY_TITLE), fmt::security(l, network.security).to_string());
     let signal = l.pick(texts::wlan::SIGNAL_STRENGTH);
     let title = l.pick(texts::wlan::DETAILS);
+    // Whether a password typed before is kept, which joins the network
+    // without asking for it again.
+    let saved = s.wlan.as_ref().is_some_and(|w| w.saved.iter().any(|v| v.ssid == network.ssid && v.security == network.security));
+    let password = saved.then(|| detail(Outline::Info, l.pick(texts::wlan::PASSWORD), l.pick(texts::wlan::SAVED).to_string()));
     let Some(j) = joined else {
-        let items = [
+        let mut items = vec![
             detail(Outline::Wifi, l.pick(texts::wlan::BANDS), fmt::bands(l, network.bands)),
             detail(Outline::Signal, signal, fmt::signal(l, network.signal).to_string()),
             security,
         ];
+        items.extend(password);
         let y = widgets::detail_grid(&mut c, t, f, y, &items);
         return Frame::new(t, fit(c, t, y), out, title, top);
     };
@@ -2618,6 +2623,7 @@ pub fn wlan_network(cx: &Ctx) -> Frame {
             if let Some(router) = link.router {
                 items.push(detail(Outline::Router, l.pick(texts::wlan::ROUTER), router.to_string()));
             }
+            items.extend(password);
         }
         _ => {
             items.push(detail(Outline::Signal, signal, fmt::signal(l, network.signal).to_string()));

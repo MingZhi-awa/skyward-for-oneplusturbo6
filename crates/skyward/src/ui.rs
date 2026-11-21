@@ -2625,6 +2625,8 @@ impl Pages<'_> {
             Effect::JoinWlan { ssid, name, security, password } => {
                 wlan_worker(&self.wlan)?.send(wlan::Command::Join { ssid, name, security, password: password.0 })
             }
+            Effect::JoinSaved { ssid, name } => wlan_worker(&self.wlan)?.send(wlan::Command::JoinSaved { ssid, name }),
+            Effect::ForgetWlan { ssid } => wlan_worker(&self.wlan)?.send(wlan::Command::Forget { ssid }),
             Effect::LeaveWlan => wlan_worker(&self.wlan)?.send(wlan::Command::Leave),
             Effect::CheckUpdate => self.check_update()?,
             Effect::Download(release) => self.download(release, now)?,

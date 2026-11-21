@@ -411,6 +411,8 @@ ip_address = "Địa chỉ IP"
 subnet_mask = "Mặt nạ mạng con"
 router = "Bộ định tuyến"
 forget = "Quên mạng"
+# Whether the network keeps its password, so that it joins without asking.
+saved = "Đã lưu"
 generation = "Wi-Fi {n}"
 off = "Tắt"
 turning_on = "Đang bật"

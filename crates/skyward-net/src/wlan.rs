@@ -15,6 +15,17 @@ pub struct Wlan {
     pub networks: Vec<Network>,
     /// The network chosen, and how joining it goes.
     pub joined: Option<Joined>,
+    /// The networks whose passwords the recovery keeps, which join without
+    /// asking for theirs again.
+    pub saved: Vec<Saved>,
+}
+
+/// A network whose password the recovery keeps. What the pages are told of
+/// it is which network it is and how it is protected, never the password.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Saved {
+    pub ssid: Vec<u8>,
+    pub security: Security,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

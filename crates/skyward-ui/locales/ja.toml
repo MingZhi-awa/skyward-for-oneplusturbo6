@@ -408,6 +408,8 @@ ip_address = "IP アドレス"
 subnet_mask = "サブネットマスク"
 router = "ルーター"
 forget = "ネットワークを削除"
+# Whether the network keeps its password, so that it joins without asking.
+saved = "保存済み"
 generation = "Wi-Fi {n}"
 off = "オフ"
 turning_on = "オンにしています"

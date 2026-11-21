@@ -109,7 +109,7 @@ mod tests {
         assert_eq!(tap(&mut app, &f, &i, Action::Toggle(Switch::Wlan)), vec![Effect::Wlan(true)]);
         assert_eq!(app.state.wlan.as_ref().unwrap().power, Power::Starting, "the switch moves at once");
         let nearby = vec![network("Skyward", -34, Security::Psk), network("Skyward-Open", -72, Security::Open), network("Skyward-WEP", -60, Security::Wep)];
-        app.set_wlan(Wlan { power: Power::On, networks: nearby, joined: None });
+        app.set_wlan(Wlan { power: Power::On, networks: nearby, joined: None, saved: Vec::new() });
         tap(&mut app, &f, &i, Action::JoinNetwork(2));
         assert_eq!(toast(&app), Some("暂不支持 WEP 加密的网络"));
         let cafe = Effect::JoinWlan { ssid: b"Skyward-Open".to_vec(), name: "Skyward-Open".into(), security: Security::Open, password: Secret::default() };
@@ -136,7 +136,7 @@ mod tests {
         assert_eq!(fmt::wlan_value(Lang::Hans, app.state.wlan.as_ref().unwrap()), "Skyward");
         tap(&mut app, &f, &i, Action::OpenJoined);
         assert_eq!(app.screen(), Screen::WlanNetwork);
-        assert_eq!(tap(&mut app, &f, &i, Action::LeaveNetwork), vec![Effect::LeaveWlan]);
+        assert_eq!(tap(&mut app, &f, &i, Action::LeaveNetwork), vec![Effect::ForgetWlan { ssid: b"Skyward".to_vec() }, Effect::LeaveWlan]);
         assert_eq!(app.screen(), Screen::Wlan);
         assert_eq!(tap(&mut app, &f, &i, Action::Toggle(Switch::Wlan)), vec![Effect::Wlan(false)]);
         assert_eq!(app.state.wlan, Some(Wlan::default()));
@@ -164,7 +164,7 @@ mod tests {
     fn the_status_bar_shows_the_network_joined_and_how_fast_data_goes_without_the_page_drawn_again() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
-        app.set_wlan(Wlan { power: Power::On, networks: Vec::new(), joined: None });
+        app.set_wlan(Wlan { power: Power::On, networks: Vec::new(), joined: None, saved: Vec::new() });
         assert!(app.wlan_mark().is_none(), "no network joined");
         app.set_wlan(joined("Skyward", Joining::Addressing));
         assert!(app.wlan_mark().is_none(), "not while it has no address");
@@ -183,7 +183,7 @@ mod tests {
     fn a_network_is_added_by_hand_with_its_name_protection_and_password() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
-        app.state.wlan = Some(Wlan { power: Power::On, networks: Vec::new(), joined: None });
+        app.state.wlan = Some(Wlan { power: Power::On, networks: Vec::new(), joined: None, saved: Vec::new() });
         app.act(Action::Open(Screen::Wlan), 0);
         tap(&mut app, &f, &i, Action::AddNetwork);
         assert_eq!(app.screen(), Screen::WlanAdd, "the list ends with adding one, found networks or none");
@@ -236,7 +236,7 @@ mod tests {
     fn a_network_added_by_hand_is_turned_down_for_a_name_too_long_and_joined_open_without_its_password() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
-        app.state.wlan = Some(Wlan { power: Power::On, networks: vec![network("Skyward-Open", -72, Security::Open)], joined: None });
+        app.state.wlan = Some(Wlan { power: Power::On, networks: vec![network("Skyward-Open", -72, Security::Open)], joined: None, saved: Vec::new() });
         app.act(Action::Open(Screen::Wlan), 0);
         tap(&mut app, &f, &i, Action::AddNetwork);
         tap(&mut app, &f, &i, Action::ChooseSecurity);
@@ -261,7 +261,7 @@ mod tests {
     fn the_keys_open_a_list_of_choices_take_one_and_close_it_going_back() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
-        app.state.wlan = Some(Wlan { power: Power::On, networks: Vec::new(), joined: None });
+        app.state.wlan = Some(Wlan { power: Power::On, networks: Vec::new(), joined: None, saved: Vec::new() });
         app.act(Action::Open(Screen::Wlan), 0);
         app.act(Action::AddNetwork, 0);
         app.frame(&f, &i);
@@ -286,7 +286,7 @@ mod tests {
     fn a_choice_shows_held_down_while_touched() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
-        app.state.wlan = Some(Wlan { power: Power::On, networks: Vec::new(), joined: None });
+        app.state.wlan = Some(Wlan { power: Power::On, networks: Vec::new(), joined: None, saved: Vec::new() });
         app.act(Action::Open(Screen::Wlan), 0);
         tap(&mut app, &f, &i, Action::AddNetwork);
         tap(&mut app, &f, &i, Action::ChooseSecurity);
@@ -315,7 +315,7 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
         let nearby = vec![network("Skyward", -34, Security::Psk), network("Skyward-Open", -72, Security::Open)];
-        app.state.wlan = Some(Wlan { power: Power::On, networks: nearby, joined: None });
+        app.state.wlan = Some(Wlan { power: Power::On, networks: nearby, joined: None, saved: Vec::new() });
         app.act(Action::Open(Screen::Wlan), 0);
         assert_eq!(tap(&mut app, &f, &i, Action::Rescan), vec![Effect::ScanWlan]);
         tap(&mut app, &f, &i, Action::NetworkDetails(1));
@@ -330,5 +330,17 @@ mod tests {
         assert!(row.contains(round.x + round.w / 2.0, round.y + round.h / 2.0));
         assert_eq!(fr.hit(round.x + round.w / 2.0, round.y + round.h / 2.0).map(|h| h.action), Some(Action::NetworkDetails(1)));
         assert_eq!(fr.hit(row.x + row.w / 3.0, row.y + row.h / 2.0).map(|h| h.action), Some(Action::JoinNetwork(1)));
+    }
+
+    #[test]
+    fn a_network_whose_password_is_kept_joins_without_asking_for_it() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        let kept = skyward_net::wlan::Saved { ssid: b"Skyward".to_vec(), security: Security::Psk };
+        app.state.wlan = Some(Wlan { power: Power::On, networks: vec![network("Skyward", -34, Security::Psk)], joined: None, saved: vec![kept] });
+        app.act(Action::Open(Screen::Wlan), 0);
+        let join = Effect::JoinSaved { ssid: b"Skyward".to_vec(), name: "Skyward".into() };
+        assert_eq!(tap(&mut app, &f, &i, Action::JoinNetwork(0)), vec![join]);
+        assert_eq!(app.screen(), Screen::Wlan, "a password kept is not asked for again");
     }
 }

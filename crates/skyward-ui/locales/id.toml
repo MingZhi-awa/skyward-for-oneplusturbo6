@@ -408,6 +408,8 @@ ip_address = "Alamat IP"
 subnet_mask = "Subnet mask"
 router = "Router"
 forget = "Lupakan jaringan"
+# Whether the network keeps its password, so that it joins without asking.
+saved = "Disimpan"
 generation = "Wi-Fi {n}"
 off = "Nonaktif"
 turning_on = "Mengaktifkan"

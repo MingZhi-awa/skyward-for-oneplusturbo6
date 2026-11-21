@@ -277,6 +277,7 @@ pub(super) fn joined(name: &str, stage: Joining) -> Wlan {
         power: Power::On,
         networks: vec![n.clone()],
         joined: Some(skyward_net::wlan::Joined { ssid: n.ssid, name: n.name, security: n.security, stage }),
+        saved: Vec::new(),
     }
 }
 

@@ -471,6 +471,8 @@ ip_address = "IP address"
 subnet_mask = "Subnet mask"
 router = "Router"
 forget = "Forget network"
+# Whether the network keeps its password, so that it joins without asking.
+saved = "Saved"
 generation = "Wi-Fi {n}"
 # What the home page says beside its WLAN entry.
 off = "Off"

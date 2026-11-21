@@ -414,6 +414,8 @@ ip_address = "Adresse IP"
 subnet_mask = "Masque de sous-réseau"
 router = "Routeur"
 forget = "Oublier le réseau"
+# Whether the network keeps its password, so that it joins without asking.
+saved = "Enregistré"
 generation = "Wi-Fi {n}"
 off = "Désactivé"
 turning_on = "Activation"

@@ -4,6 +4,7 @@
 //! stand each time that changes.
 
 use anyhow::{bail, ensure, Context, Result};
+use crate::saved_wlan::{self, Kept as KeptNetwork};
 use skyward_config::{Firmware, Wlan as Config};
 use skyward_net::dhcp::{self, Kept, Lease};
 use skyward_net::http::Servers;
@@ -67,7 +68,12 @@ pub enum Command {
     Off,
     Scan,
     Join { ssid: Vec<u8>, name: String, security: Security, password: String },
+    /// Join a network whose password is kept, with no password from the
+    /// screen.
+    JoinSaved { ssid: Vec<u8>, name: String },
     Leave,
+    /// Keep no password for the network `ssid` any more.
+    Forget { ssid: Vec<u8> },
 }
 
 /// What comes to the thread: a command, how asking for an address went,
@@ -108,8 +114,15 @@ impl Worker {
     pub fn start(cfg: Config, modules: Vec<PathBuf>, libraries: Option<PathBuf>, servers: Servers) -> Result<Worker> {
         let (inbox, asked) = worker::telling().context("make the WLAN thread's inbox")?;
         let back = inbox.clone();
+        // What the WLAN kept of the networks joined before, read once the
+        // thread has persist in reach.
+        let kept = saved_wlan::load().unwrap_or_else(|e| {
+            let _ = skyward_sys::kmsg(&format!("the networks kept are unreadable: {e:#}"));
+            Vec::new()
+        });
         let worker = worker::Worker::start("wlan", move |tell| {
-            let mut s = Station { cfg, modules, libraries, servers, state: Wlan::default(), running: None, back, tell };
+            let mut s = Station { cfg, modules, libraries, servers, state: Wlan::default(), running: None, back, tell, kept, pending: None };
+            s.state.saved = s.kept.iter().map(KeptNetwork::seen).collect();
             s.run(&asked);
         })?;
         Ok(Worker { inbox, worker })
@@ -203,6 +216,11 @@ struct Station {
     servers: Servers,
     state: Wlan,
     running: Option<Running>,
+    /// The networks whose passwords are kept, as the file holds them.
+    kept: Vec<KeptNetwork>,
+    /// The password of the network being joined, kept once its access point
+    /// has taken it.
+    pending: Option<KeptNetwork>,
     /// What a thread asking for an address, or looking how far the
     /// network reaches, answers to: the thread's own inbox.
     back: Teller<Inbox>,
@@ -262,6 +280,9 @@ impl Station {
             }
             Command::Join { ssid, name, security, password } => {
                 self.unaddress();
+                // The password is kept once the access point has taken it,
+                // for the next time the network is joined.
+                self.pending = (!password.is_empty()).then(|| KeptNetwork { ssid: ssid.clone(), security, password: password.clone() });
                 let mut joined = Joined { ssid, name, security, stage: Stage::Joining };
                 if let Err(e) = self.join(&joined, &password) {
                     let _ = skyward_sys::kmsg(&format!("joining {} failed: {e:#}", joined.name));
@@ -269,8 +290,23 @@ impl Station {
                 }
                 self.state.joined = Some(joined);
             }
+            Command::JoinSaved { ssid, name } => {
+                let found = self.kept.iter().find(|k| k.ssid == ssid).map(|k| (k.security, k.password.clone()));
+                match found {
+                    Some((security, password)) => self.command(Command::Join { ssid, name, security, password }),
+                    None => {
+                        let _ = skyward_sys::kmsg(&format!("no password is kept for {name}"));
+                        self.state.joined = None;
+                    }
+                }
+            }
+            Command::Forget { ssid } => {
+                self.kept.retain(|k| k.ssid != ssid);
+                self.keep();
+            }
             Command::Leave => {
                 self.unaddress();
+                self.pending = None;
                 if let Some(r) = &self.running
                     && let Err(e) = r.control.order("REMOVE_NETWORK all")
                 {
@@ -343,7 +379,8 @@ impl Station {
         if let Err(e) = iface::set_up(&self.cfg.interface, false) {
             let _ = skyward_sys::kmsg(&format!("{e:#}"));
         }
-        self.state = Wlan::default();
+        // What is kept of the networks outlasts the WLAN being off.
+        self.state = Wlan { saved: self.kept.iter().map(KeptNetwork::seen).collect(), ..Wlan::default() };
     }
 
     /// The supplicant no longer answers: the WLAN is off, and why is said.
@@ -405,11 +442,18 @@ impl Station {
 
     fn joining(&mut self, told: &Told) {
         let Some(j) = &mut self.state.joined else { return };
-        match j.on(told) {
+        let next = j.on(told);
+        match next {
             Next::Show => {}
-            Next::Address => self.ask_address(),
+            // The access point took the password: what was typed is kept,
+            // whether or not an address comes of it.
+            Next::Address => {
+                self.remember();
+                self.ask_address();
+            }
             Next::Unaddress => self.unaddress(),
             Next::Forget => {
+                self.pending = None;
                 if let Some(r) = &self.running
                     && let Err(e) = r.control.order("REMOVE_NETWORK all")
                 {
@@ -417,6 +461,27 @@ impl Station {
                 }
             }
         }
+    }
+
+    /// Keep the password of the network just joined, once its access point
+    /// has taken it, so that joining it again takes no typing.
+    fn remember(&mut self) {
+        let Some(k) = self.pending.take() else { return };
+        if self.kept.contains(&k) {
+            return;
+        }
+        self.kept.retain(|s| s.ssid != k.ssid);
+        self.kept.push(k);
+        self.keep();
+    }
+
+    /// Write the networks kept to persist, and tell the screen which of
+    /// them are.
+    fn keep(&mut self) {
+        if let Err(e) = saved_wlan::store(&self.kept) {
+            let _ = skyward_sys::kmsg(&format!("the networks joined cannot be kept: {e:#}"));
+        }
+        self.state.saved = self.kept.iter().map(KeptNetwork::seen).collect();
     }
 
     /// Ask the network for an address, on a thread of its own.

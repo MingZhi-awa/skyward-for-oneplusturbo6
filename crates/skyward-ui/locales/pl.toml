@@ -417,6 +417,8 @@ ip_address = "Adres IP"
 subnet_mask = "Maska podsieci"
 router = "Router"
 forget = "Zapomnij sieć"
+# Whether the network keeps its password, so that it joins without asking.
+saved = "Zapisane"
 generation = "Wi-Fi {n}"
 off = "Wyłączone"
 turning_on = "Włączanie"

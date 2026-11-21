@@ -570,7 +570,12 @@ pub enum Effect {
     Wlan(bool),
     ScanWlan,
     JoinWlan { ssid: Vec<u8>, name: String, security: Security, password: Secret },
+    /// Join a network whose password the recovery keeps, which the pages
+    /// are told of with [`Wlan::saved`](skyward_net::wlan::Wlan::saved).
+    JoinSaved { ssid: Vec<u8>, name: String },
     LeaveWlan,
+    /// Keep no password for the network `ssid` any more.
+    ForgetWlan { ssid: Vec<u8> },
     /// Ask the update server for the newest system, telling what it
     /// answered with [`App::update_checked`].
     CheckUpdate,

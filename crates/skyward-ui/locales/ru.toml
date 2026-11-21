@@ -417,6 +417,8 @@ ip_address = "IP-адрес"
 subnet_mask = "Маска подсети"
 router = "Маршрутизатор"
 forget = "Удалить сеть"
+# Whether the network keeps its password, so that it joins without asking.
+saved = "Сохранён"
 generation = "Wi-Fi {n}"
 off = "Выключен"
 turning_on = "Включение"

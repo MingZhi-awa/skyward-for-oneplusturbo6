@@ -408,6 +408,8 @@ ip_address = "IP 位址"
 subnet_mask = "子網路遮罩"
 router = "路由器"
 forget = "刪除網路"
+# Whether the network keeps its password, so that it joins without asking.
+saved = "已儲存"
 generation = "第{n}代"
 off = "已關閉"
 turning_on = "正在開啟"

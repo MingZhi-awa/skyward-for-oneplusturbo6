@@ -411,6 +411,8 @@ ip_address = "IP adresi"
 subnet_mask = "Alt ağ maskesi"
 router = "Yönlendirici"
 forget = "Ağı unut"
+# Whether the network keeps its password, so that it joins without asking.
+saved = "Kaydedildi"
 generation = "Wi-Fi {n}"
 off = "Kapalı"
 turning_on = "Açılıyor"
