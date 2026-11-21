@@ -99,9 +99,19 @@ jobs:
         run: |
           zip -9 "$NAME.zip" "$NAME.img"
           sha256sum "$NAME.zip" | tee "$NAME.zip.sha256"
+      # An artifact that is not zipped holds one file, so the image and its sum
+      # go up as two; the release job takes them by their names.
       - uses: actions/upload-artifact@v7
         with:
-          path: out/*.zip*
+          name: ${{ steps.pack.outputs.name }}
+          path: out/${{ steps.pack.outputs.name }}.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.pack.outputs.name }}.sha256
+          path: out/${{ steps.pack.outputs.name }}.zip.sha256
           archive: false
           if-no-files-found: error
           retention-days: 7
