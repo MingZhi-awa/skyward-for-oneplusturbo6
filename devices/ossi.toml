@@ -1,9 +1,10 @@
 [device]
-# OnePlus calls the phone ossi in its own build; the community's tree calls
-# the Chinese variant giuliac and the global 13R giulia.
+# The phone calls itself ossi in its own build, and the recovery's own
+# properties say the same; the platform underneath is sun, which is the
+# SM8750 these three models share. This port is made on the OnePlus Ace 6.
 codename = "ossi"
 brand = "OnePlus"
-model = "OnePlus Ace 5"
+model = "OnePlus Ace 6"
 ab = true
 # File transfer is served by the recovery itself: its own rules mount the
 # function, and the port offers it beside adb once both have their
@@ -13,15 +14,23 @@ mtp = true
 # keeps the recovery domain from the tee and dma-heap nodes it opens; the
 # port's own recoveries run permissive.
 selinux_permissive = true
-soc = { hans = "第三代骁龙®8移动平台", hant = "第三代驍龍®8行動平台", en = "Snapdragon® 8 Gen 3 Mobile Platform" }
-# ro.build.display.id is PKG110_11_A.01 on ColorOS and the port's own build
-# on the Xiaomi system this phone runs, so the default is kept.
+soc = { hans = "骁龙®8至尊版移动平台", hant = "驍龍®8至尊版行動平台", en = "Snapdragon® 8 Elite Mobile Platform" }
+# What the About page calls the version is read from the installed system's
+# own build.prop, not from the recovery's property file: the recovery's file
+# carries the AOSP build id (AP3A.240617.008 dev-keys) and none of the OPLUS
+# version properties, while the system's build.prop carries
+# ro.build.version.oplusrom = V17.0.0 for this phone. The Android version is
+# shown beside it from ro.build.version.release, so this one is ColorOS's.
+os_version_prop = "ro.build.version.oplusrom"
 
 [display]
-width = 1264
-height = 2780
+# The mode the panel reports to DRM on this phone is 1272x2800 at 165 Hz, as
+# the display driver names it: 1272x2800x165cmd, crtc 210. The frame is drawn
+# at the mode's own size, so nothing is left over at the edges.
+width = 1272
+height = 2800
 density = 480
-diagonal = 6.78
+diagonal = 6.83
 # The stock system rounds the panel's corners to this, as its display
 # service reports them.
 corner_radius = 134
@@ -56,15 +65,18 @@ load = [
     "repeater-qti-pmic-eusb2",
 ]
 
-# The NFC chip's node, which its driver makes root's alone. The secure
-# element's service opens it as the nfc account to power the eSE on, as
-# /vendor/etc/ueventd.rc gives it to that account; a recovery's own
-# ueventd does not see a node made after it has read the rules.
-[[owners]]
-user = "nfc"
-group = "nfc"
-mode = 0o660
-paths = ["/dev/nq-nci"]
+# No [[owners]] at all. The one the Ace 5 configuration carried waited for
+# /dev/nq-nci, which this phone's kernel never makes: its NFC chip is driven
+# by TMS, and the node it makes is /dev/tms_nfc. An entry whose file never
+# appears stops the whole bring-up after five seconds, and everything after
+# it, the phone's key programs included, is never started. That is what the
+# kernel log showed on this phone:
+#
+#   skyward: devices not brought up: wait for a file the modules just loaded
+#   make: /dev/nq-nci is not there after 5000 ms
+#
+# Nothing here needs one: this phone has no weaver, so the keys are opened
+# through the TEE alone and no secure element node is handed to an account.
 
 # The firmware of the WLAN chip, and the apps the secure world loads, are on
 # the modem partition, which the phone mounts at /vendor/firmware_mnt and its
@@ -93,6 +105,53 @@ oneshot = true
 user = "root"
 groups = ["root", "system", "wakelock", "graphics"]
 
+# The programs that open the data partition, in the order the phone's own init
+# starts them: the QSEECom daemon the rest talk to the secure world through,
+# then the key service and the credential service either side of it.
+#
+# Every one of them loads part of its libraries from /odm/lib64 as well as the
+# vendor's own folder, which is where this phone's OPLUS layer puts what they
+# need. Started with only /system/lib64 and /vendor/lib64 in the search path,
+# the QSEECom service ends with status 1 as soon as it is started, and the
+# recovery starts it again every second: the kernel log showed pid after pid
+# ending that way until the phone was restarted by hand.
+[[service]]
+path = "/vendor/bin/qseecomd"
+libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64"]
+user = "root"
+groups = ["root", "drmrpc"]
+
+[[service]]
+path = "/vendor/bin/hw/vendor.qti.hardware.qseecom@1.0-service"
+libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64"]
+user = "system"
+groups = ["system", "drmrpc"]
+ready_service = "vendor.qti.hardware.qseecom.IQSEECom/default"
+
+[[service]]
+path = "/vendor/bin/hw/android.hardware.security.keymint-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64"]
+user = "system"
+groups = ["system", "drmrpc"]
+ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
+
+[[service]]
+path = "/vendor/bin/hw/android.hardware.gatekeeper-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64"]
+user = "system"
+groups = ["system"]
+ready_service = "android.hardware.gatekeeper.IGatekeeper/default"
+
+# No NFC or secure element services here, and no [[owners]] for their nodes.
+# This phone has no weaver: its keystore guards what a screen lock opens
+# through the TEE alone, which the four programs above reach. That is where it
+# parts from the OnePlus 13 port, whose weaver sits behind the embedded secure
+# element and so needs the NFC stack powered on first. The phone's own kernel
+# makes /dev/tms_nfc rather than the /dev/nq-nci the shared vendor rules name,
+# and no /dev/tms_ese exists at all: an owner entry for a node nothing makes
+# stops the service dead after five seconds of waiting, and the recovery would
+# restart into the same wait.
+
 # WLAN: Qualcomm's Kiwi on PCIe, driven by qca_cld3_kiwi_v2 over the cnss2
 # platform driver. rfkill is not built into this kernel but is one of its own
 # modules, in system_dlkm, and the vendor's modules.dep does not name it
@@ -110,8 +169,41 @@ groups = ["root", "system", "wakelock", "graphics"]
 # before the vendor partition's, as on the Xiaomi phones: the vendor
 # partition carries its own copies of the lowest of them, and a program
 # loading those would not be understood by the recovery's service directory.
+# The modem, which the bootloader leaves offline in a recovery and which the
+# WLAN's driver needs: cnss2 asks the modem's QMI services for the chip's
+# firmware and calibration, and without them it retries
+# "cnss: DMS QMI connection not established" and never makes wlan0. The
+# phone's own init starts both of these; remoteproc1 is the modem (mss) and
+# remoteproc0 the audio DSP, which comes up with it.
+[[service]]
+path = "/system/bin/sh"
+args = [
+    "-c",
+    "echo start > /sys/class/remoteproc/remoteproc1/state; echo start > /sys/class/remoteproc/remoteproc0/state; sleep 6",
+]
+oneshot = true
+user = "root"
+groups = ["root"]
+
+# WLAN: Qualcomm's Kiwi on PCIe, driven by qca_cld3_kiwi_v2 over the cnss2
+# platform driver. Three modules, in this order:
+#
+#   rfkill    one of the kernel's own modules, which lives on system_dlkm and
+#             not on vendor: cfg80211 is refused with unknown rfkill symbols
+#             without it, and it is not in the vendor's modules.dep either.
+#   cfg80211  which kiwi_v2 depends on; left out, the driver is refused with
+#             unknown cfg80211 symbols.
+#   qca_cld3_kiwi_v2
+#
+# Once fs_ready is written, cnss2 powers the chip up and loads its firmware
+# from the modem partition, and wlan0 appears. The handshake takes a few
+# seconds and cnss2 may disconnect and connect again within it. The driver
+# asks the firmware loader for its settings, which the vendor partition keeps
+# in /vendor/etc/wifi/kiwi_v2; its MAC file link points at a file persist
+# does not hold, which the driver takes as no address of its own. The
+# interface comes up unblocked: rfkill reads soft 0, state 1.
 [wlan]
-modules = ["rfkill", "qca_cld3_kiwi_v2"]
+modules = ["rfkill", "cfg80211", "qca_cld3_kiwi_v2"]
 writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
 firmware = [
     { name = "wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini", path = "/vendor/etc/wifi/kiwi_v2/WCNSS_qcom_cfg.ini" },
