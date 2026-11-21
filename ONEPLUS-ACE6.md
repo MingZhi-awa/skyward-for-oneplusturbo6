@@ -265,7 +265,7 @@ target/release/skyward-pack recovery \
 ## 校验
 
 ```
-7ae7df505de76cc048cd7221935a397a210037ef54607334b6d2d22fe0448c17  skyward-ossi.img
+f981fd154742a4bcac2abc17ecde5ebe7ce0f50d8e119a55b05617a58caa7f7a  skyward-ossi.img
 ```
 
 ## 说明
