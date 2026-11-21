@@ -502,7 +502,17 @@ fn lp(super_dev: &Path, slot: Option<u32>) -> Result<()> {
 
 /// Load `names` from the module sources the configuration lists.
 fn load_modules(cfg: &DeviceConfig, names: &[String]) -> Result<Vec<PathBuf>> {
-    let dirs = cfg.modules.sources.iter().map(|s| skyward_modules::source_dir(s)).collect::<Result<Vec<_>>>()?;
+    // A source may keep its modules in more than one layout, as system_dlkm
+    // does; every one of them is searched, in the order the source names.
+    let dirs = cfg
+        .modules
+        .sources
+        .iter()
+        .map(|s| skyward_modules::source_dirs(s))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
     skyward_modules::load(&dirs, names)
 }
 
@@ -755,15 +765,17 @@ fn recovery() -> Result<()> {
         std::fs::set_permissions(skyward_sys::RUN, std::fs::Permissions::from_mode(0o755))
             .with_context(|| format!("open {} to the recovery's other users", skyward_sys::RUN))?;
         skyward_sys::keep_log(Path::new(skyward_sys::LOG))?;
-        // A recovery that ended with a function of its own in the port took
-        // the port with it, and the stock rules set "adb" before this
-        // recovery mounted functionfs, so adbd may have started and failed
-        // already. Going through "none" and back starts it again now that
-        // the mount is there.
+        // Ask for adb without taking the port down first: this phone's USB
+        // setup does not come back from "none" inside a recovery, and the
+        // rules that take the second function off the gadget when the port
+        // is "none" leave adbd's link gone, so the computer sees the phone
+        // enumerate again every time the recovery touches the port. A port
+        // that does not take adb at once is left as init set it up, and the
+        // recovery still runs.
         // adb is what a failure later on is inspected through; a port that
         // will not come up as adb still leaves the screen and the keys.
-        if let Err(e) = skyward_sys::usb::switch("adb", std::time::Duration::from_secs(5)) {
-            let _ = skyward_sys::kmsg(&format!("adb is not up on the USB port: {e:#}"));
+        if let Err(e) = skyward_sys::usb::set("adb", std::time::Duration::from_secs(5)) {
+            let _ = skyward_sys::kmsg(&format!("the port did not take adb at once: {e:#}"));
         }
         // What the port came to, and what is missing where it did not, so
         // the log read from the phone's own system shows where the chain
