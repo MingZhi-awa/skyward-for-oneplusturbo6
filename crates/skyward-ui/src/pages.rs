@@ -18,7 +18,7 @@ use crate::texts;
 use crate::theme::Theme;
 use crate::icons::{self, Icon};
 use crate::widgets::{self, Caption, Detail, Fact, Outline, Row, Spec, SystemCard, SystemMark, Tone, Trail};
-use skyward_info::{DeviceInfo, VERSION};
+use skyward_info::{DeviceInfo, DISPLAY_VERSION, VERSION};
 use skyward_install::{Outcome, Reflash, Refusal, Stage};
 use skyward_net::download::Progress;
 use skyward_net::supplicant::Security;
@@ -26,6 +26,11 @@ use skyward_net::wlan::{Bands, Network, Power, Stage as Joining};
 use skyward_systems::{Held, Who};
 use skyward_vab::{Slot, Standing};
 use std::path::Path;
+
+/// Who made this port, shown on the page that lists the recovery's own
+/// version. Upstream's own builds carry no name here; a port does, so that
+/// the phone's owner can tell whose build is on it.
+const PORT_AUTHOR: &str = "kirklin & Liuyimeng1024";
 
 // The colours the stock Settings fills its icons' tiles with, the same in
 // light and dark mode.
@@ -362,7 +367,7 @@ pub fn settings(cx: &Ctx) -> Frame {
     let debug = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::page::TERMINAL)).icon(SLATE, Icon::Terminal)]);
     out.extend(hits(&debug.rows, &[Action::Open(Screen::Terminal)]));
     y = widgets::section(&mut c, t, f, debug.bottom, l.pick(texts::settings::ABOUT));
-    let mut rows = vec![Row::new(l.pick(texts::page::ABOUT)).trail(Trail::Value(VERSION))];
+    let mut rows = vec![Row::new(l.pick(texts::page::ABOUT)).trail(Trail::Value(DISPLAY_VERSION))];
     let mut opens = vec![Action::Open(Screen::About)];
     if s.offers(Screen::SkywardUpdate) {
         let row = Row::new(l.pick(texts::page::SKYWARD_UPDATE));
@@ -464,7 +469,9 @@ pub fn mount(cx: &Ctx) -> Frame {
 }
 
 /// Who made the recovery, as the About page names them under its version.
-const AUTHOR: &str = "© 2026 Kirk Lin";
+/// Upstream's line names its own author; a port names both, so that the
+/// phone's owner can tell whose build is on it.
+const AUTHOR: &str = "© 2026 Kirk Lin & Liuyimeng1024";
 
 /// About this device, modelled on the stock「我的设备」: the wordmark, the
 /// version and its author over a moving colour field, and the summary,
@@ -481,7 +488,7 @@ pub fn about(cx: &Ctx) -> Frame {
     let canvas = fit(c, t, bottom);
     let art = HeroArt {
         wordmark: widgets::wordmark(t, f, "Skyward", m.dp(233.7), m.dp(37.8)),
-        version: widgets::version_line(t, f, VERSION),
+        version: widgets::version_line(t, f, DISPLAY_VERSION),
         author: widgets::author_line(t, f, AUTHOR),
         runs: canvas.runs(),
     };
@@ -569,7 +576,8 @@ pub fn specs(cx: &Ctx) -> Frame {
         y = widgets::info_card(&mut c, t, f, y + gap, &[(l.pick(texts::specs::ANDROID_VERSION), fmt::android(l, r, i.security_patch.as_ref()))]);
     }
     y = widgets::info_card(&mut c, t, f, y + gap, &[
-        (l.pick(texts::specs::RECOVERY_VERSION), format!("Skyward {VERSION}")),
+        (l.pick(texts::specs::RECOVERY_VERSION), format!("Skyward {DISPLAY_VERSION}")),
+        (l.pick(texts::specs::AUTHOR), PORT_AUTHOR.to_string()),
         (l.pick(texts::specs::KERNEL_VERSION), i.kernel.clone()),
     ]);
 

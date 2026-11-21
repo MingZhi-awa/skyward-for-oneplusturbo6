@@ -726,6 +726,7 @@ storage = "Storage"
 storage_capacity = "Storage capacity"
 codename = "Codename"
 recovery_version = "Recovery version"
+author = "Author"
 kernel_version = "Kernel version"
 # The bootloader.
 unlocked = "Unlocked"

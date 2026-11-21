@@ -14,6 +14,12 @@ use std::sync::Mutex;
 /// Version of this build, shown on the About page.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The version as the pages write it: upstream's number, and after it the
+/// phone this build was made for, so that a port is told apart from the
+/// build it came from. Cargo's own version stays a plain number, which the
+/// package format and the update check both read.
+pub const DISPLAY_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-OnePlus-Ace6");
+
 const CPU: &str = "/sys/devices/system/cpu";
 const POWER_SUPPLY: &str = "/sys/class/power_supply";
 const SYS_BLOCK: &str = "/sys/class/block";
