@@ -760,38 +760,29 @@ mod tests {
     }
 
     #[test]
-    fn parses_ossi() {
-        let cfg = DeviceConfig::parse(include_str!("../../../devices/ossi.toml")).unwrap();
-        assert_eq!(cfg.device.codename, "ossi");
-        assert_eq!(cfg.device.model, "OnePlus Ace 5");
-        assert!(cfg.device.mtp, "the recovery serves file transfer beside adb over the port it brings up itself");
+    fn parses_plq110() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/PLQ110.toml")).unwrap();
+        assert_eq!(cfg.device.codename, "PLQ110");
+        assert_eq!(cfg.device.model, "OnePlus Ace 6");
+        assert!(!cfg.device.mtp, "MTP beside adb resets this phone's port, so only adb is offered");
         assert!(cfg.device.selinux_permissive, "the recovery domain cannot reach the tee nodes");
-        assert_eq!((cfg.display.width, cfg.display.height, cfg.display.corner_radius), (1264, 2780, 134));
+        assert_eq!((cfg.display.width, cfg.display.height, cfg.display.corner_radius), (1272, 2800, 134));
         assert_eq!(
             cfg.modules.load,
-            [
-                "oplus_bsp_synaptics_tcm2",
-                "qcom-hv-haptics",
-                "nxp-nci",
-                "wcd939x_dlkm",
-                "wcd_usbss_i2c",
-                "fsa4480-i2c",
-                "redriver",
-                "repeater",
-                "repeater-qti-pmic-eusb2",
-            ],
-            "the port's switch, redriver and repeater go with the ones the recovery loads for the screen and the keys"
+            ["oplus_bsp_synaptics_tcm2", "qcom-hv-haptics", "nxp-nci"],
+            "the USB port's own modules are left to the phone, as the OnePlus 13 port leaves them"
         );
         assert_eq!(cfg.partitions.mounted, ["persist"]);
-        assert_eq!(cfg.owners.len(), 1, "the NFC chip's node is handed to the account its service runs as");
-        assert_eq!(cfg.owners[0].paths, ["/dev/nq-nci"]);
-        assert_eq!((cfg.owners[0].user.as_str(), cfg.owners[0].group.as_str()), ("nfc", "nfc"));
-        let [post_boot] = &cfg.services[..] else { panic!("one program: those that use the phone's keys are read from the phone's own partitions") };
-        assert_eq!(post_boot.args, ["/vendor/bin/init.kernel.post_boot.sh"]);
-        let haptics = cfg.haptics.expect("the Ace 5 has a motor");
+        assert!(cfg.owners.is_empty(), "this phone's NFC is driven by TMS, so the node the shared rules name is never made");
+        // The phone's own partitions say what its keys need, so only the one
+        // program the recovery runs itself is here: the one that settles the
+        // CPUs. The modem, which the WLAN wants, is left out for now.
+        assert_eq!(cfg.services.len(), 1, "the key programs are read from the phone's own partitions");
+        assert_eq!(cfg.services[0].args, ["/vendor/bin/init.kernel.post_boot.sh"]);
+        let haptics = cfg.haptics.expect("the Ace 6 has a motor");
         assert_eq!((haptics.resonance.as_deref(), haptics.period_us.as_deref()), (None, Some("/sys/class/qcom-haptics/t_lra_us")));
         let wlan = cfg.wlan.expect("its WLAN is brought up");
-        assert_eq!(wlan.modules, ["rfkill", "qca_cld3_kiwi_v2"]);
+        assert_eq!(wlan.modules, ["rfkill", "cfg80211", "qca_cld3_kiwi_v2"]);
         assert_eq!(wlan.firmware[0].name, "wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini");
         assert!(cfg.stock.is_none(), "the stock image is given to the packer instead");
     }

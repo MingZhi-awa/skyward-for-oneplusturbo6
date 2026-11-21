@@ -203,8 +203,9 @@ struct Transfer {
 }
 
 impl Transfer {
-    /// Serve file transfer; the port offers it from when it next rests.
-    fn start(cfg: &DeviceConfig, info: &skyward_info::DeviceInfo, zone: usize) -> Result<Transfer> {
+    /// Serve file transfer, whether the port offers it now or waits for the
+    /// switch to turn it on. The port carries it from when it next rests.
+    fn start(cfg: &DeviceConfig, info: &skyward_info::DeviceInfo, zone: usize, on: bool) -> Result<Transfer> {
         let device = skyward_mtp::Device {
             manufacturer: cfg.device.brand.clone(),
             model: info.model.clone(),
@@ -214,7 +215,9 @@ impl Transfer {
             battery: Box::new(|| skyward_info::battery_now().ok().flatten().map(|b| b.level)),
         };
         let service = skyward_mtp::Service::start(device, skyward_ui::fmt::rules(zone).clone())?;
-        skyward_sys::usb::set_mtp(cfg.device.mtp);
+        // Whether the port carries it, which is what the switch sets: on this
+        // phone the port holds file transfer or adb, never both.
+        skyward_sys::usb::set_mtp(on);
         Ok(Transfer { service, offered: false, zone })
     }
 
@@ -1309,15 +1312,27 @@ impl<'a> Pages<'a> {
         let read_at = Instant::now();
         let fastboot = first == Screen::Fastboot;
         let port_at = Instant::now();
-        let mut transfer: Option<Transfer> = None;
-        if app.state.file_transfer {
-            match Transfer::start(cfg, &info, app.state.time_zone) {
-                Ok(t) => transfer = Some(t),
-                Err(e) => {
-                    skyward_sys::kmsg(&format!("file transfer did not start: {e:#}"))?;
-                    app.file_transfer_failed(false, &skyward_ui::fmt::transfer_failed(app.state.lang, &format!("{e:#}")), monotonic_ms());
-                }
+        // The service that answers a computer's file transfer is made whether
+        // or not the switch is on: making it is what mounts its function, and
+        // the switch only decides whether the port carries it. Without this
+        // the switch could never turn it on, because there would be nothing
+        // behind it to answer.
+        let mut transfer: Option<Transfer> = match Transfer::start(cfg, &info, app.state.time_zone, app.state.file_transfer) {
+            Ok(t) => Some(t),
+            Err(e) => {
+                skyward_sys::kmsg(&format!("file transfer did not start: {e:#}"))?;
+                app.file_transfer_failed(false, &skyward_ui::fmt::transfer_failed(app.state.lang, &format!("{e:#}")), monotonic_ms());
+                None
             }
+        };
+        // A recovery that starts with the switch on has to offer the storage
+        // as well, or the computer would see a port with nothing in it.
+        if let Some(t) = transfer.as_mut()
+            && app.state.file_transfer
+            && let Err(e) = t.offer(true, app.state.lang)
+        {
+            skyward_sys::kmsg(&format!("file transfer did not offer its storage: {e:#}"))?;
+            app.file_transfer_failed(false, &skyward_ui::fmt::transfer_failed(app.state.lang, &format!("{e:#}")), monotonic_ms());
         }
         if fastboot {
             if let Err(e) = skyward_sys::usb::switch("fastboot", USB_TIMEOUT) {
@@ -2999,29 +3014,44 @@ impl Pages<'_> {
     /// file transfer on, or leaves it, when it comes back to rest.
     fn file_transfer(&mut self, on: bool, now: u64) -> Result<()> {
         let rests = !self.fastboot && !self.sideloading;
-        match (on, self.transfer.take()) {
-            (true, None) => match Transfer::start(self.cfg, &self.info, self.app.state.time_zone) {
-                Ok(t) => {
-                    self.transfer = Some(t);
-                    if rests
-                        && let Err(e) = skyward_sys::usb::switch(skyward_sys::usb::resting(), USB_TIMEOUT)
-                    {
-                        skyward_sys::kmsg(&format!("the port did not take file transfer: {e:#}"))?;
-                        self.app.report(&format!("{e:#}"), now);
-                    }
-                }
-                Err(e) => {
-                    skyward_sys::kmsg(&format!("file transfer did not start: {e:#}"))?;
+        // The port carries one of the two, never both: this phone resets it
+        // when file transfer and adb sit in one configuration. Turning the
+        // switch on gives the port file transfer and takes adb away; turning
+        // it off gives adb back.
+        match (on, self.transfer.as_mut()) {
+            (true, Some(t)) => {
+                if let Err(e) = t.offer(true, self.app.state.lang) {
+                    skyward_sys::kmsg(&format!("file transfer did not offer its storage: {e:#}"))?;
                     self.app.file_transfer_failed(false, &skyward_ui::fmt::transfer_failed(self.app.state.lang, &format!("{e:#}")), now);
+                    return Ok(());
                 }
-            },
-            (false, Some(t)) => {
-                if let Err(e) = t.stop(rests) {
-                    skyward_sys::kmsg(&format!("file transfer did not stop cleanly: {e:#}"))?;
-                    self.app.report(&skyward_ui::fmt::transfer_left_on(self.app.state.lang, &format!("{e:#}")), now);
+                skyward_sys::usb::set_mtp(true);
+                if rests
+                    && let Err(e) = skyward_sys::usb::switch(skyward_sys::usb::resting(), USB_TIMEOUT)
+                {
+                    skyward_sys::kmsg(&format!("the port did not take file transfer: {e:#}"))?;
+                    self.app.report(&format!("{e:#}"), now);
                 }
             }
-            (on, t) => unreachable!("the switch turned file transfer {on} while it was {}", t.is_some()),
+            (false, Some(t)) => {
+                if let Err(e) = t.offer(false, self.app.state.lang) {
+                    skyward_sys::kmsg(&format!("file transfer did not take its storage back: {e:#}"))?;
+                }
+                skyward_sys::usb::set_mtp(false);
+                if rests
+                    && let Err(e) = skyward_sys::usb::switch(skyward_sys::usb::resting(), USB_TIMEOUT)
+                {
+                    skyward_sys::kmsg(&format!("the port did not go back to adb: {e:#}"))?;
+                    self.app.report(&format!("{e:#}"), now);
+                }
+            }
+            (_, None) => {
+                // The service never came up, so there is nothing to carry:
+                // say so rather than leaving the switch looking as if it did
+                // something.
+                skyward_sys::kmsg("file transfer is not running, so the port stays as it is")?;
+                self.app.file_transfer_failed(false, &skyward_ui::fmt::transfer_failed(self.app.state.lang, "file transfer did not start"), now);
+            }
         }
         Ok(())
     }

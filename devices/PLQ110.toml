@@ -1,15 +1,32 @@
 [device]
-# The phone calls itself ossi in its own build, and the recovery's own
-# properties say the same; the platform underneath is sun, which is the
-# SM8750 these three models share. This port is made on the OnePlus Ace 6.
-codename = "ossi"
+# The phone's model number, which is what OnePlus prints on the box and what
+# the settings app calls it; its build answers to ossi in ro.product.device
+# and the community's trees call it ktm. The number is the name used here
+# because it is the one the phone's owner knows it by.
+#
+# What is written here goes into what the recovery keeps: a backup's manifest
+# records it, and a restore refuses one made for another phone, so a build
+# that named itself differently from the last would not take its own backups
+# back. Nothing matches it against the phone's own properties — a package's
+# pre-device is checked against ro.product.device — so any name works as long
+# as it stays the same from one build to the next.
+codename = "PLQ110"
 brand = "OnePlus"
 model = "OnePlus Ace 6"
 ab = true
-# File transfer is served by the recovery itself: its own rules mount the
-# function, and the port offers it beside adb once both have their
-# descriptors. The stock rules have none for it.
-mtp = true
+# File transfer over the port, and adb, one at a time. The stock recovery's
+# USB setup carries adb and fastboot only, and offering MTP beside them resets
+# the port on this phone: the computer sees the device leave and come back,
+# adb drops with it, and no command outlives a second. The OnePlus 13 port,
+# which is the same platform, says the same.
+#
+# So the switch in the settings page picks one, and the port carries that one:
+# on, file transfer alone; off, adb alone. It starts off, so that a computer
+# has adb as soon as the recovery is up; turning file transfer on gives the
+# storage and takes adb away, and turning it off gives adb back. Files still
+# move over adb, with `adb push` and `adb pull`, which is what a recovery is
+# driven with.
+mtp = false
 # qseecomd runs in the tee domain on OPLUS, and this recovery's own policy
 # keeps the recovery domain from the tee and dma-heap nodes it opens; the
 # port's own recoveries run permissive.
@@ -48,22 +65,38 @@ load = [
     "oplus_bsp_synaptics_tcm2",
     "qcom-hv-haptics",
     "nxp-nci",
-    # The USB port's data path: the Type-C switch in the codec, the switch
-    # chip beside it, the redriver and repeater in front of them, and the
-    # charge driver their events go through. The gadget and the port's role
-    # are up without them, and a computer sees nothing of the phone: the
-    # switch stays where the bootloader left it, and a bound gadget has no
-    # wires behind it.
-    # The switch itself is a block of the codec, and its driver is the one
-    # that reports a cable to the charge driver and turns the port to the
-    # phone once the role switch asks.
-    "wcd939x_dlkm",
-    "wcd_usbss_i2c",
-    "fsa4480-i2c",
-    "redriver",
-    "repeater",
-    "repeater-qti-pmic-eusb2",
 ]
+
+# The USB port's own modules are left to the phone, as the OnePlus 13 port —
+# the same platform — leaves them. The codec that holds the port's Type-C
+# switch, the redriver and the repeater in front of it were loaded here
+# before, and the codec's driver is what holds wcd_usbss_i2c open: with a
+# cable in that driver runs a surge check on the port every fifteen seconds
+# ("wcd_usbss_is_in_reset_state: cable_status = 1", then its strings say
+# "payload@@usbss surge occurs", "Surge check #1 failed"), and it drives the
+# codec's switch over I2C to do it. That is what the phone went down in
+# before: the kernel stopped answering, dmesg included. Left to the phone,
+# adb still comes up — the gadget and the port's role are the stock init's
+# work, not these modules'.
+
+# wcd_usbss_i2c and fsa4480-i2c are left out on purpose, though the USB data
+# path wants them. With a cable in, wcd_usbss_i2c runs a surge check on the
+# port every fifteen seconds — its own log says so:
+#
+#   wcd_usbss_is_in_reset_state: Exit ret = 0, cable_status = 1
+#
+# at 91.8 s, 107.2 s, 122.3 s, 137.4 s, 152.5 s, 167.6 s, and its strings
+# name what it does there: "payload@@usbss surge occurs", "Surge check #1
+# failed", "Surge check #2 failed". The phone went down at forty-eight
+# seconds into a recovery more than once, always with a cable in, and the
+# last line before the kernel stopped answering was this one. The check
+# drives the codec's switch over I2C, and the codec's driver is one of the
+# four that hold this one open, so a check that does not come back takes the
+# kernel with it.
+#
+# adb is what has to keep working, so this is tested by leaving the two out
+# and seeing whether the port still comes up. If it does not, they go back and
+# the cable is kept out while the recovery is used.
 
 # No [[owners]] at all. The one the Ace 5 configuration carried waited for
 # /dev/nq-nci, which this phone's kernel never makes: its NFC chip is driven
@@ -105,52 +138,25 @@ oneshot = true
 user = "root"
 groups = ["root", "system", "wakelock", "graphics"]
 
-# The programs that open the data partition, in the order the phone's own init
-# starts them: the QSEECom daemon the rest talk to the secure world through,
-# then the key service and the credential service either side of it.
+# No key programs of its own here, and no NFC or secure element services, and
+# no [[owners]] for their nodes.
 #
-# Every one of them loads part of its libraries from /odm/lib64 as well as the
-# vendor's own folder, which is where this phone's OPLUS layer puts what they
-# need. Started with only /system/lib64 and /vendor/lib64 in the search path,
-# the QSEECom service ends with status 1 as soon as it is started, and the
-# recovery starts it again every second: the kernel log showed pid after pid
-# ending that way until the phone was restarted by hand.
-[[service]]
-path = "/vendor/bin/qseecomd"
-libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64"]
-user = "root"
-groups = ["root", "drmrpc"]
-
-[[service]]
-path = "/vendor/bin/hw/vendor.qti.hardware.qseecom@1.0-service"
-libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64"]
-user = "system"
-groups = ["system", "drmrpc"]
-ready_service = "vendor.qti.hardware.qseecom.IQSEECom/default"
-
-[[service]]
-path = "/vendor/bin/hw/android.hardware.security.keymint-service-qti"
-libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64"]
-user = "system"
-groups = ["system", "drmrpc"]
-ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
-
-[[service]]
-path = "/vendor/bin/hw/android.hardware.gatekeeper-service-qti"
-libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64"]
-user = "system"
-groups = ["system"]
-ready_service = "android.hardware.gatekeeper.IGatekeeper/default"
-
-# No NFC or secure element services here, and no [[owners]] for their nodes.
+# The recovery reads the phone's own init scripts out of its partitions and
+# starts what they name for the keys, in the order and with the accounts they
+# give: qseecomd, ssgtzd, hlosminkdaemon, the key service, the credential
+# service and the boot service. Listing the same programs here starts each of
+# them twice, and two key services and two credential services on one phone
+# take the secure world's answers away from each other: the decrypt page then
+# waits for an answer that never comes and the phone hangs.
+#
 # This phone has no weaver: its keystore guards what a screen lock opens
-# through the TEE alone, which the four programs above reach. That is where it
-# parts from the OnePlus 13 port, whose weaver sits behind the embedded secure
-# element and so needs the NFC stack powered on first. The phone's own kernel
-# makes /dev/tms_nfc rather than the /dev/nq-nci the shared vendor rules name,
-# and no /dev/tms_ese exists at all: an owner entry for a node nothing makes
-# stops the service dead after five seconds of waiting, and the recovery would
-# restart into the same wait.
+# through the TEE alone. That is where it parts from the OnePlus 13 port,
+# whose weaver sits behind the embedded secure element and so needs the NFC
+# stack powered on first. The phone's own kernel makes /dev/tms_nfc rather
+# than the /dev/nq-nci the shared vendor rules name, and no /dev/tms_ese
+# exists at all: an owner entry for a node nothing makes stops the service
+# dead after five seconds of waiting, and the recovery would restart into the
+# same wait.
 
 # WLAN: Qualcomm's Kiwi on PCIe, driven by qca_cld3_kiwi_v2 over the cnss2
 # platform driver. rfkill is not built into this kernel but is one of its own
@@ -169,21 +175,29 @@ ready_service = "android.hardware.gatekeeper.IGatekeeper/default"
 # before the vendor partition's, as on the Xiaomi phones: the vendor
 # partition carries its own copies of the lowest of them, and a program
 # loading those would not be understood by the recovery's service directory.
-# The modem, which the bootloader leaves offline in a recovery and which the
-# WLAN's driver needs: cnss2 asks the modem's QMI services for the chip's
-# firmware and calibration, and without them it retries
-# "cnss: DMS QMI connection not established" and never makes wlan0. The
-# phone's own init starts both of these; remoteproc1 is the modem (mss) and
-# remoteproc0 the audio DSP, which comes up with it.
-[[service]]
-path = "/system/bin/sh"
-args = [
-    "-c",
-    "echo start > /sys/class/remoteproc/remoteproc1/state; echo start > /sys/class/remoteproc/remoteproc0/state; sleep 6",
-]
-oneshot = true
-user = "root"
-groups = ["root"]
+
+# The modem, which the WLAN's driver needs, is not started here for now.
+#
+# cnss2 asks the modem's QMI services for the chip's firmware and
+# calibration, and without them it retries "cnss: DMS QMI connection not
+# established" and never makes wlan0 — so the WLAN wants the modem up. But
+# with it started, this phone went down twice at forty-eight seconds into the
+# recovery, both times without a touch: the kernel stopped answering, dmesg
+# included, which is a hang and not the UI. The WLAN's own modules and the
+# screen are up by then, so what is left is the modem's firmware load on top
+# of everything else the recovery is bringing up in its first minute.
+#
+# Until that is understood, the phone is left without the modem and so
+# without the WLAN, and the rest of the recovery works. What starts it, when
+# it is wanted again, is the processor by its name and not its number — the
+# numbers this phone gives its remoteprocs are not the same from one boot to
+# the next, and starting "remoteproc1" started the audio DSP on one boot,
+# which does not come up in a recovery and leaves the kernel saying
+# "gpr_send_pkt: q6 state is down" every fifty milliseconds:
+#
+#   for r in /sys/class/remoteproc/remoteproc*; do
+#       case $(cat $r/name) in *remoteproc-mss) echo start > $r/state;; esac
+#   done
 
 # WLAN: Qualcomm's Kiwi on PCIe, driven by qca_cld3_kiwi_v2 over the cnss2
 # platform driver. Three modules, in this order:

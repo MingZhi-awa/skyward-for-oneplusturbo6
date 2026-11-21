@@ -367,7 +367,158 @@ fn is_mountpoint(path: &Path) -> Result<bool> {
 
 /// The battery as it is now.
 pub fn battery_now() -> Result<Option<Battery>> {
-    battery(Path::new(POWER_SUPPLY))
+    // The fuel gauge's own answer first, then the converter's. A gauge that
+    // answers with an error is treated as no gauge at all, so that a phone
+    // whose charge driver half-came-up still gets a level to show.
+    if let Ok(Some(b)) = battery(Path::new(POWER_SUPPLY)) {
+        return Ok(Some(b));
+    }
+    from_the_converter()
+}
+
+/// The battery, worked out from the voltage the PMIC measures across it.
+///
+/// The channel is Qualcomm's `vbat_sns`, on the PMIC's housekeeping
+/// converter: on this phone `/sys/…/pmk8550@0:vadc@9000/iio:device0/
+/// in_voltage_pmih010x_vbat_sns_qbg_input`, in microvolts. Its path is
+/// searched for rather than written out, because the address in it belongs to
+/// the SoC and to the PMIC, and both differ between phones.
+///
+/// A voltage is a coarse way to say how full a battery is: the cell's voltage
+/// sags under load and rises while charging, so the answer is only good to
+/// about ten percent. That is enough for the one thing it is for — refusing
+/// to write a system on a battery that will not last the write.
+fn from_the_converter() -> Result<Option<Battery>> {
+    // A reading that cannot be taken is not an error to report: the caller
+    // draws the pages without a battery either way, and a phone whose
+    // converter has no such channel is not broken.
+    let Some(volts) = converter_volts().unwrap_or(None) else { return Ok(None) };
+    Ok(Some(Battery {
+        level: level_of(volts),
+        // Whether a charger is in cannot be told from the voltage alone, and
+        // a reading taken while charging sits above the resting one anyway.
+        charge: Charge::Unknown,
+        temp: None,
+        health: None,
+        cycles: None,
+        design: None,
+        full: None,
+        voltage: Some(volts.max(0) as u64),
+        quick: false,
+        plugged: false,
+    }))
+}
+
+/// The battery's voltage in microvolts, as the PMIC's converter measures it.
+///
+/// The channel is looked for by the one name it always has, with everything
+/// around it matched loosely: the addresses in the path belong to the SoC and
+/// to the PMIC, and differ between phones. Only the converter's own directory
+/// is taken, which is the one holding an `in_voltage_…_input` file — the
+/// device tree's nodes under `of_node` carry the same names without being
+/// readable, and walking into them is what an earlier attempt did.
+fn converter_volts() -> Result<Option<i64>> {
+    const SOC: &str = "/sys/devices/platform/soc";
+    const CHANNEL: &str = "in_voltage_pmih010x_vbat_sns_qbg_input";
+    let Ok(devices) = fs::read_dir(SOC) else { return Ok(None) };
+    for device in devices.flatten() {
+        let name = device.file_name();
+        let name = name.to_string_lossy();
+        // The bus node's address belongs to the SoC, so it is matched by its
+        // name rather than written out.
+        if !name.contains("qcom,spmi") || is_link(&device.path()) {
+            continue;
+        }
+        // The converter sits below the bus: the bus's own device, the address
+        // on it, the PMIC's node there, and the converter's device. Asking for
+        // the channel at each level rather than counting them keeps this
+        // working when a phone's tree puts one fewer in between.
+        if let Some(v) = channel_under(&device.path(), CHANNEL, 6)? {
+            return Ok(Some(v));
+        }
+    }
+    Ok(None)
+}
+
+/// The value of `channel`, looked for at most `depth` directories below `at`.
+///
+/// Symlinks are not followed and the device tree's `of_node` is not entered:
+/// sysfs fills the first with the device model's other ends, and the second
+/// with nodes that carry the channel's name without the file behind it.
+fn channel_under(at: &Path, channel: &str, depth: u8) -> Result<Option<i64>> {
+    if depth == 0 {
+        return Ok(None);
+    }
+    let here = at.join(channel);
+    if here.is_file() {
+        return parse_opt::<i64>(here, "battery voltage");
+    }
+    let Ok(entries) = fs::read_dir(at) else { return Ok(None) };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if is_link(&path) || !path.is_dir() {
+            continue;
+        }
+        if path.file_name().is_some_and(|n| n == "of_node") {
+            continue;
+        }
+        if let Some(v) = channel_under(&path, channel, depth - 1)? {
+            return Ok(Some(v));
+        }
+    }
+    Ok(None)
+}
+
+/// Whether `path` is a symbolic link, which sysfs fills with to point at the
+/// device model's other ends.
+fn is_link(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
+}
+
+/// How full a cell is at `microvolts`, as a percentage.
+///
+/// The curve is the usual one for a lithium-ion cell: nearly flat through the
+/// middle, steep at both ends. Between the points the answer is interpolated,
+/// so that a reading that moves by a millivolt does not move the number by a
+/// percent.
+fn level_of(microvolts: i64) -> u8 {
+    const CURVE: [(i64, u8); 19] = [
+        (3_400_000, 0),
+        (3_450_000, 2),
+        (3_500_000, 5),
+        (3_550_000, 8),
+        (3_600_000, 12),
+        (3_650_000, 18),
+        (3_700_000, 25),
+        (3_750_000, 35),
+        (3_800_000, 45),
+        (3_850_000, 55),
+        (3_900_000, 65),
+        (3_950_000, 72),
+        (4_000_000, 78),
+        (4_050_000, 84),
+        (4_100_000, 90),
+        (4_150_000, 95),
+        (4_200_000, 100),
+        (4_250_000, 100),
+        (4_300_000, 100),
+    ];
+    if microvolts <= CURVE[0].0 {
+        return 0;
+    }
+    if microvolts >= CURVE[CURVE.len() - 1].0 {
+        return 100;
+    }
+    for pair in CURVE.windows(2) {
+        let [(low_v, low_p), (high_v, high_p)] = [pair[0], pair[1]];
+        if microvolts < high_v {
+            let across = high_v - low_v;
+            let into = microvolts - low_v;
+            let span = i64::from(high_p) - i64::from(low_p);
+            return (i64::from(low_p) + into * span / across) as u8;
+        }
+    }
+    100
 }
 
 /// The first power supply whose type is `Battery`; `None` while no fuel-gauge
@@ -446,6 +597,25 @@ mod tests {
         assert_eq!(cpulist("0").unwrap(), vec![0]);
         assert!(cpulist("3-1").is_err());
         assert!(cpulist("").is_err());
+    }
+
+    #[test]
+    fn a_voltage_says_roughly_how_full_the_cell_is() {
+        // The ends are pinned, and the middle rises with the voltage.
+        assert_eq!(level_of(3_200_000), 0);
+        assert_eq!(level_of(3_400_000), 0);
+        assert_eq!(level_of(4_200_000), 100);
+        assert_eq!(level_of(4_400_000), 100);
+        let mut last = 0;
+        for v in (3_400_000..=4_200_000).step_by(10_000) {
+            let now = level_of(v);
+            assert!(now >= last, "{v} gave {now} after {last}");
+            last = now;
+        }
+        // Between two points of the curve the answer is between theirs.
+        let (low, high) = (level_of(3_800_000), level_of(3_850_000));
+        let middle = level_of(3_825_000);
+        assert!(low < middle && middle < high, "{low} {middle} {high}");
     }
 
     #[test]
