@@ -237,10 +237,14 @@ pub fn installed_props(slot: Slot) -> Result<HashMap<String, String>> {
     parts.sort_by_key(|m| PROP_ORDER.iter().position(|b| *b == base(m)).unwrap_or(PROP_ORDER.len()));
     let mut props: HashMap<String, String> = skyward_sys::props(BOOT_PROPS).into_iter().collect();
     for m in &parts {
+        // AOSP keeps each partition's properties under etc/ or, for system,
+        // under system/; OPLUS keeps the ones for its own my_* partitions in
+        // the partition's root, which is where this phone's ColorOS version
+        // sits: /my_product/build.prop carries ro.build.version.oplusrom.
         let files: &[&str] = match base(m).as_str() {
-            "system" => &["system/build.prop"],
+            "system" => &["system/build.prop", "build.prop"],
             "vendor" => &["default.prop", "build.prop"],
-            _ => &["etc/build.prop"],
+            _ => &["etc/build.prop", "build.prop"],
         };
         for f in files {
             let path = m.mount_point.join(f);
