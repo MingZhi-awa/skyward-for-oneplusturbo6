@@ -1,9 +1,15 @@
 use anyhow::{bail, Context, Result};
 use cpio::{NewcBuilder, NewcReader};
+// Unpacking an archive as files needs links, nodes and owners, which only a
+// host that keeps Unix's own numbers has. The packer reads an archive's
+// entries and writes the archive back, so it loads none of this.
+#[cfg(unix)]
 use std::ffi::{CString, OsStr};
 use std::fs;
 use std::io::{Cursor, Read, Write};
+#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -82,9 +88,12 @@ impl Ramdisk {
 
     /// Pack as a newc archive compressed the way AOSP packs boot ramdisks,
     /// with the reference `lz4` tool in legacy framing (the kernel's initramfs
-    /// unpacker reads no other LZ4 framing) at its highest compression.
+    /// unpacker reads no other LZ4 framing) at its highest compression. A
+    /// host without that tool writes the same framing in process, which the
+    /// kernel reads just the same.
     pub fn encode(&self) -> Result<Vec<u8>> {
-        lz4_tool(&self.archive()?)
+        let archive = self.archive()?;
+        if lz4_tool_installed() { lz4_tool(&archive) } else { Ok(lz4_legacy(&archive)) }
     }
 
     /// Pack as a newc archive, uncompressed.
@@ -122,6 +131,7 @@ impl Ramdisk {
     /// everything in it is in. Where a file is already there, the entry is
     /// made anew, where the kernel writes over it, so that a program
     /// running from that file is left alone.
+    #[cfg(unix)]
     pub fn unpack(&self, root: &Path) -> Result<()> {
         for e in &self.entries {
             let path = root.join(&e.name);
@@ -192,11 +202,24 @@ fn root_entry(name: &str, mode: u32, data: Vec<u8>) -> Entry {
     Entry { name: name.to_string(), mode, uid: 0, gid: 0, mtime: 0, nlink, dev: (0, 0), rdev: (0, 0), data }
 }
 
+/// Unpacking belongs to the phone: the packer reads an archive's entries and
+/// writes the archive back, laying none of them out as files, so a host that
+/// cannot make a link, a node or an owner says so rather than pretend.
+#[cfg(not(unix))]
+impl Ramdisk {
+    pub fn unpack(&self, root: &Path) -> Result<()> {
+        let _ = root;
+        bail!("a ramdisk is unpacked on the phone, not on this host")
+    }
+}
+
+#[cfg(unix)]
 fn c_path(path: &Path) -> Result<CString> {
     CString::new(path.as_os_str().as_bytes()).context("a NUL in the path")
 }
 
 /// One entry of [`Ramdisk::unpack`] at `path`.
+#[cfg(unix)]
 fn unpack(e: &Entry, path: &Path) -> Result<()> {
     let kind = e.mode & S_IFMT;
     let mode = e.mode & 0o7777;
@@ -243,6 +266,7 @@ fn unpack(e: &Entry, path: &Path) -> Result<()> {
 
 /// Give `path` itself, a link or not, `mtime` as the time it was last
 /// changed and read.
+#[cfg(unix)]
 fn set_time(path: &Path, mtime: u32) -> Result<()> {
     let at = libc::timespec { tv_sec: mtime as libc::time_t, tv_nsec: 0 };
     let times = [at, at];
@@ -273,6 +297,18 @@ pub fn lz4_legacy(input: &[u8]) -> Vec<u8> {
         out.extend_from_slice(&block);
     }
     out
+}
+
+/// Whether the reference `lz4` tool is on this host, whose framing at its
+/// highest compression is what a stock ramdisk is packed in.
+fn lz4_tool_installed() -> bool {
+    Command::new("lz4")
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 fn lz4_tool(input: &[u8]) -> Result<Vec<u8>> {
