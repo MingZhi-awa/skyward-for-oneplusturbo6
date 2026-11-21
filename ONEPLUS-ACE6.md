@@ -272,7 +272,7 @@ f981fd154742a4bcac2abc17ecde5ebe7ce0f50d8e119a55b05617a58caa7f7a  skyward-ossi.i
 
 - 只应刷 `recovery` 分区，不要刷 `boot` / `init_boot` / `vendor_boot`
 - recovery 下 adb 是 root 且不需要手机端授权，注意数据安全
-- Wi-Fi 从点开到能扫描需要十几秒：modem 固件加载 + cnss 校准是硬件固有时间
+- Wi-Fi 从开机到能扫描需要 60–90 秒：实测模块加载在 64.9 秒，主要是 modem 固件加载、cnss 校准与 40 多个依赖模块的加载
 - 本仓库基于 GPL-3.0-or-later 的 Skyward，遵循同一许可证
 
 ## 可向上游提交的部分
