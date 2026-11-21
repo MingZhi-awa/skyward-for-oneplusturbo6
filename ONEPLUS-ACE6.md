@@ -1,11 +1,33 @@
 # 一加 Ace 6（`ossi` / PLQ110）Skyward 移植
 
-本仓库是 [kirklin/skyward](https://github.com/kirklin/skyward) 针对**一加 Ace 6（PLQ110）**的移植分支。
+本仓库是 [kirklin/skyward](https://github.com/kirklin/skyward) 针对**一加 Ace 6（PLQ110）**的移植分支，
+仓库名 `skyward-for-oneplusace6`。它不是一加或上游 Skyward 的官方发布。
 
 - 设备内部代号：`ossi`（`ro.product.device`），平台 `sun`（SM8750）
 - 测试系统：ColorOS **V17.0.0** / Android 17
 - 测试槽位：`a`，Bootloader 已解锁
 - 基线提交：上游 `c5e09f6`
+
+## 这个分支与上游的关系
+
+`upstream` 指向上游 `kirklin/skyward`，本分支在上游 `c5e09f6` 之上有 9 个提交：
+
+```
+7ebf365 fix(bootimg): Windows 构建（解包 stub + lz4 回退）
+388b98a feat(ossi): 设备配置 + 本文档
+da4d946 fix: 模块目录列表 + rooted 路径
+bcab6a6 fix(usb): 停止反复枚举
+88f8758 fix(info): build.prop 根目录
+238d49e fix(modules): 两种布局 + 跨目录依赖
+cad76c1 feat(input): 触屏中断
+16e7d49 fix(ui): OPPO 亮度属性
+3b9fecc feat(ossi): 基础移植（基于 Ral-sei/skyward-for-oneplusace5）
+c5e09f6 ← 上游基线
+```
+
+其中**前六个是通用修复**，对其它 OPLUS 机型同样适用（见文末「可向上游提交的部分」）。
+本仓库**不包含**移植时使用的 Windows 构建辅助工具（打包器 `ktm-pack` 与 `build-ktm.ps1`），
+只保留源码、设备配置与文档；构建方式见下文，用上游的标准流程即可。
 
 ## 当前状态
 
@@ -243,7 +265,7 @@ target/release/skyward-pack recovery \
 ## 校验
 
 ```
-<填入实际 SHA-256>  skyward-ossi.img
+7ae7df505de76cc048cd7221935a397a210037ef54607334b6d2d22fe0448c17  skyward-ossi.img
 ```
 
 ## 说明
@@ -252,3 +274,22 @@ target/release/skyward-pack recovery \
 - recovery 下 adb 是 root 且不需要手机端授权，注意数据安全
 - Wi-Fi 从点开到能扫描需要十几秒：modem 固件加载 + cnss 校准是硬件固有时间
 - 本仓库基于 GPL-3.0-or-later 的 Skyward，遵循同一许可证
+
+## 可向上游提交的部分
+
+下面六个提交不依赖这台设备，对其它机型同样成立，可以考虑拆成独立 PR 提到上游：
+
+| 提交 | 影响面 | 说明 |
+| --- | --- | --- |
+| `16e7d49` | 所有 OPLUS 机型 | 面板亮度属性 `oplus,dsi-bl-normal-max-level` |
+| `cad76c1` | 所有走 hbp 触屏的 OPLUS 机型 | 开机使能触屏中断 |
+| `238d49e` | 所有 GKI 机型 | `system_dlkm` 两种布局 + 跨目录模块依赖 |
+| `88f8758` | 所有 OPLUS 机型 | 分区根目录的 `build.prop` |
+| `da4d946` | 通用 | 每个模块源的所有候选目录 |
+| `7ebf365` | 非 Unix 构建主机 | 解包 stub + lz4 回退 |
+
+`bcab6a6`（USB 重新枚举）改的是 `mtp.rc` 与启动路径，**可能影响其它机型的 USB 行为**，
+建议单独提，并附上本机的实测现象。
+
+`388b98a` 与 `3b9fecc` 是设备专属内容，不宜混进通用 PR。
+
