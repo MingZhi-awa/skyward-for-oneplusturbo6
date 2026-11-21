@@ -3,10 +3,21 @@
 本仓库是 [kirklin/skyward](https://github.com/kirklin/skyward) 针对**一加 Ace 6（PLQ110）**的移植分支，
 仓库名 `skyward-for-oneplusace6`。它不是一加或上游 Skyward 的官方发布。
 
+## 版权与许可
+
+```
+Copyright (C) 2026 Kirk Lin            — 上游 Skyward
+Copyright (C) 2026 Liuyimeng1024       — 一加 Ace 6 移植
+```
+
+本项目是修改版，遵循上游的 **GPL-3.0-or-later**，许可证全文见 [LICENSE](LICENSE)。
+修改内容见本文档与 git 提交记录；上游的版权声明保留在「关于本机」页面
+（`© 2026 Kirk Lin & Liuyimeng1024`）。
+
 - 设备内部代号：`ossi`（`ro.product.device`），平台 `sun`（SM8750）
 - 测试系统：ColorOS **V17.0.0** / Android 17
 - 测试槽位：`a`，Bootloader 已解锁
-- 基线提交：上游 `c5e09f6`
+- 基线提交：上游 `9b1054b`
 
 ## 这个分支与上游的关系
 
