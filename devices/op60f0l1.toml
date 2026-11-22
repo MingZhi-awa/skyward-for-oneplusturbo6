@@ -7,9 +7,17 @@ codename = "op60f0l1"
 brand = "OnePlus"
 model = "OnePlus Turbo 6"
 ab = true
-# File transfer is served by the recovery itself; the stock rules have none for
-# it, so the port mounts the function beside adb once both have descriptors.
-mtp = true
+# File transfer over the port, and adb, one at a time. The recovery's own
+# receive page serves the file transfer whatever this says: this is the state
+# the switch in the settings page starts in, and on this phone that is off, so
+# that a computer has adb as soon as the pages are up.
+#
+# The two in one configuration are known to reset this port on the Ace 6, the
+# same platform and the same OPLUS stock init, and that was never ruled out
+# here: the computer sees the device leave and come back, adb drops with it,
+# and no command outlives a second. Since the port carries one or the other
+# now, a port that turns out to take both costs nothing but a toggle.
+mtp = false
 # qseecomd runs in the tee domain on OPLUS, and this recovery's own policy keeps
 # the recovery domain away from the tee and dma-heap nodes it opens.
 selinux_permissive = true
@@ -51,18 +59,34 @@ sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
 # interrupt has to be switched on, with ioctl 0xC50A on /dev/hbp0, which the
 # port does in Inputs::open(). The vibration motor is qcom-hv-haptics; the NFC
 # chip is NXP's and the node it makes on this phone is /dev/tms_nfc.
-# The USB port's data path: this phone's codec is the wcd9378, where the Ace 6
-# port loads the wcd939x.
+#
+# The touch driver keeps its own log at INFO, which on an OPLUS hbp stack is a
+# line of hex and a line of coordinates for every report: thousands of lines a
+# second while a finger moves, a full log ring and a phone that stops
+# answering. This port turns the level down to FATAL as it turns the
+# interrupt on (ioctl 0xC514 on /dev/hbp0), so nothing here has to say that.
+#
+# The USB port's own modules — the codec that holds its Type-C switch, the
+# switch chip beside it, the redriver and the repeater in front of them, which
+# were loaded here on the strength of the Ace 6's first port — are left to the
+# phone, as the OnePlus 13 and Ace 6 ports leave them. wcd_usbss_i2c is the
+# one that matters: with a cable in it runs a surge check on the port every
+# fifteen seconds over the codec's I2C, and on the Ace 6 that check is what
+# the kernel stopped answering in, at forty-eight seconds, dmesg included. The
+# gadget and the port's role are the stock init's work, not these modules', so
+# adb is there without them. If the port turns out dead with a cable in, put
+# these back and keep the cable out while the recovery is used:
+#
+#   "wcd9378_dlkm",
+#   "wcd_usbss_i2c",
+#   "fsa4480-i2c",
+#   "redriver",
+#   "repeater",
+#   "repeater-qti-pmic-eusb2",
 load = [
     "oplus_bsp_synaptics_tcm2",
     "qcom-hv-haptics",
     "nxp-nci",
-    "wcd9378_dlkm",
-    "wcd_usbss_i2c",
-    "fsa4480-i2c",
-    "redriver",
-    "repeater",
-    "repeater-qti-pmic-eusb2",
 ]
 
 # No [[owners]] at all. This phone's NFC is driven by TMS, so its kernel makes
@@ -90,37 +114,15 @@ oneshot = true
 user = "root"
 groups = ["root", "system", "wakelock", "graphics"]
 
-# The four programs that open the data partition, in the order the phone's own
-# init starts them; all four are under /vendor/bin/hw on this firmware. Each
-# loads part of its libraries from /odm/lib64, where OPLUS puts what they need:
-# without that path the qseecom service ends with status 1 as soon as it is
-# started and is started again every second.
-[[service]]
-path = "/vendor/bin/qseecomd"
-libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64"]
-user = "root"
-groups = ["root", "drmrpc"]
-
-[[service]]
-path = "/vendor/bin/hw/vendor.qti.hardware.qseecom@1.0-service"
-libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64"]
-user = "system"
-groups = ["system", "drmrpc"]
-ready_service = "vendor.qti.hardware.qseecom.IQSEECom/default"
-
-[[service]]
-path = "/vendor/bin/hw/android.hardware.security.keymint-service-qti"
-libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64"]
-user = "system"
-groups = ["system", "drmrpc"]
-ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
-
-[[service]]
-path = "/vendor/bin/hw/android.hardware.gatekeeper-service-qti"
-libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64"]
-user = "system"
-groups = ["system"]
-ready_service = "android.hardware.gatekeeper.IGatekeeper/default"
+# No key programs listed here. The recovery reads the phone's own init scripts
+# out of its partitions and starts what they name for the keys — qseecomd, the
+# QSEECom service, the key service, the credential service and the boot
+# service — in the order and with the accounts and library paths the phone
+# gives them, /odm/lib64 included. Listing the same programs here starts each
+# of them twice, and two key services and two credential services on one
+# phone take the secure world's answers away from each other: the decrypt
+# page waits for an answer that never comes and the phone hangs. This is what
+# the Ace 6 port found, and what it removed them for.
 
 # The modems the bootloader leaves offline in a recovery. On this phone the
 # remote processors are numbered adsp 0, cdsp 1, mss 2 and wpss 3, where the

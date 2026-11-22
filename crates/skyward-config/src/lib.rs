@@ -788,6 +788,34 @@ mod tests {
     }
 
     #[test]
+    fn parses_op60f0l1() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/op60f0l1.toml")).unwrap();
+        assert_eq!(cfg.device.codename, "op60f0l1", "the name the phone's own build answers to, and the one every build here has used");
+        assert_eq!(cfg.device.model, "OnePlus Turbo 6");
+        assert!(!cfg.device.mtp, "the switch starts on adb, since the port is known on this platform to reset with both functions in it");
+        assert!(cfg.device.selinux_permissive, "the recovery domain cannot reach the tee nodes");
+        assert_eq!((cfg.display.width, cfg.display.height, cfg.display.corner_radius), (1272, 2772, 143));
+        assert_eq!(
+            cfg.modules.load,
+            ["oplus_bsp_synaptics_tcm2", "qcom-hv-haptics", "nxp-nci"],
+            "the USB port's own modules are left to the phone, as the OnePlus 13 and Ace 6 ports leave them"
+        );
+        assert_eq!(cfg.partitions.mounted, ["persist"]);
+        assert!(cfg.owners.is_empty(), "this phone's NFC is driven by TMS, so the node the shared rules name is never made");
+        // Every program that uses the phone's keys is read from the phone's
+        // own partitions, so listing one here would start it twice: what is
+        // left is the CPU governor and the modem the WLAN boots.
+        assert_eq!(cfg.services.len(), 2, "the key programs are read from the phone's own partitions");
+        assert_eq!(cfg.services[0].args, ["/vendor/bin/init.kernel.post_boot.sh"]);
+        assert!(cfg.services[1].args[1].contains("remoteproc2"), "the modem is remoteproc2 here, where the Ace 6 names it another");
+        assert!(cfg.haptics.is_none(), "qcom-hv-haptics loads but this phone exposes no qcom-haptics node to read a period from");
+        let wlan = cfg.wlan.expect("its WLAN is brought up");
+        assert_eq!(wlan.modules, ["rfkill", "cfg80211", "qca_cld3_wcn7750"]);
+        assert_eq!(wlan.firmware[0].name, "wlan/qca_cld/wcn7750/WCNSS_qcom_cfg.ini");
+        assert!(cfg.stock.is_none(), "the stock image is given to the packer instead");
+    }
+
+    #[test]
     fn a_program_runs_only_where_the_property_has_its_value() {
         let base = "[device]\ncodename = \"x\"\n[[service]]\npath = \"/odm/bin/a\"\n";
         let only = DeviceConfig::parse(&format!("{base}when = {{ property = \"ro.sku\", value = \"p\" }}\n")).unwrap();

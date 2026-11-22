@@ -1291,6 +1291,12 @@ impl<'a> Pages<'a> {
         };
         let mut app = App::new(first, w, h, cfg.display.density as f32 / 160.0);
         app.set_screen_corners(cfg.display.corner_radius as f32);
+        // Which of the two the port carries at the start is the
+        // configuration's to say, since a phone that resets its port when
+        // file transfer and adb sit in one configuration has to start on
+        // adb: a computer then has it as soon as the pages are up. A switch
+        // set in a start before is read below and wins over this.
+        app.state.file_transfer = cfg.device.mtp;
         // The settings kept from the starts before are back before the first
         // frame, and before file transfer starts with its switch and the time
         // zone. The pages speak the language chosen then, or else the one the
