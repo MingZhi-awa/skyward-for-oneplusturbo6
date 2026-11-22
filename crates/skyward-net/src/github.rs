@@ -5,7 +5,12 @@ use anyhow::{bail, ensure, Context, Result};
 use serde::Deserialize;
 
 /// Where GitHub answers which release of Skyward is the newest.
-pub const LATEST: &str = "https://api.github.com/repos/kirklin/skyward/releases/latest";
+///
+/// This port's own releases, not upstream's: upstream publishes for other
+/// phones, and none of its zips is for this one, so asking it would offer an
+/// update that can never be installed. The port's releases carry this
+/// phone's build, and its tags carry the port's own suffix.
+pub const LATEST: &str = "https://api.github.com/repos/liuyimeng1024-ui/skyward-for-oneplusace6/releases/latest";
 
 /// The version of GitHub's API the answer is read as.
 const API_VERSION: &str = "2022-11-28";
@@ -76,12 +81,27 @@ pub fn newest(answer: &str, codename: &str, running: &str) -> Result<Newest> {
     let release: Release = serde_json::from_str(answer).context("read GitHub's answer")?;
     let tag = release.tag_name;
     let version = tag.strip_prefix('v').with_context(|| format!("the newest release is tagged {tag}, which is not v and a version"))?;
+    // A port's tags carry the phone's name after the version, as
+    // `v0.3.2-ossi`. That is not a pre-release of 0.3.2 but the version of a
+    // build made for one phone, so it is taken off before the number is read:
+    // left on, semver would rank it below 0.3.2 and no update would ever be
+    // newer than the build that already has it.
+    let version = match version.rsplit_once('-') {
+        Some((number, _)) if number.chars().next().is_some_and(|c| c.is_ascii_digit()) => number,
+        _ => version,
+    };
     let newest = semver::Version::parse(version).with_context(|| format!("the newest release is tagged {tag}"))?;
     let this = semver::Version::parse(running).with_context(|| format!("this build's version is {running}"))?;
-    // Each zip is named skyward-, the tag, the phone's codename, and the
-    // stock build the image is made on.
-    let start = format!("skyward-{tag}-{codename}-");
-    let build = match release.assets.into_iter().find(|a| a.name.starts_with(&start) && a.name.ends_with(".zip")) {
+    // Each zip is named skyward-, the phone's codename, the tag, and whatever
+    // else the release adds. Upstream names them the other way about, the tag
+    // before the codename, so both are looked for.
+    let start = format!("skyward-{codename}-{tag}-");
+    let also = format!("skyward-{tag}-{codename}-");
+    let build = match release
+        .assets
+        .into_iter()
+        .find(|a| (a.name.starts_with(&start) || a.name.starts_with(&also)) && a.name.ends_with(".zip"))
+    {
         None => None,
         Some(a) => {
             let sha256 = a.digest.as_deref().and_then(|d| d.strip_prefix("sha256:")).with_context(|| format!("GitHub gives no SHA-256 of {}", a.name))?;
