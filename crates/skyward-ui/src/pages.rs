@@ -1446,13 +1446,19 @@ pub fn wipe(cx: &Ctx) -> Frame {
     Frame::new(t, fit(c, t, track.y + track.h), out, l.pick(texts::page::WIPE), top)
 }
 
-/// A page laid out above the on-screen keyboard: where the keyboard's top
-/// is, and its keys as touch targets.
-fn keyboard_hits(c: &mut Canvas, t: &Theme, f: &Fonts, s: &State, enter: &str, out: &mut Vec<Hit>) -> f32 {
-    let top = t.m.h as f32 - widgets::keyboard_height(t);
-    let keys = widgets::keyboard(c, t, f, s.lang, top, s.layer, s.key_held(), enter);
-    out.extend(keys.into_iter().map(|(rect, cap)| Hit { rect, action: Action::Type(cap) }));
-    top
+/// The keyboard as a strip held at the bottom of the screen, over a page that
+/// scrolls under it: its own canvas, its keys in that canvas's coordinates.
+///
+/// A page that scrolls would carry a keyboard drawn on it up and down with
+/// its content, which is not what a keyboard does. Held this way it stays
+/// where it is while the page moves beneath, and the page scrolls far enough
+/// that nothing of it is left under the keys.
+fn keyboard_dock(t: &Theme, f: &Fonts, s: &State, enter: &str) -> (Dock, f32) {
+    let height = widgets::keyboard_height(t);
+    let mut c = Canvas::new(t.m.w, height.ceil() as u32);
+    let keys = widgets::keyboard(&mut c, t, f, s.lang, 0.0, s.layer, s.key_held(), enter);
+    let hits = keys.into_iter().map(|(rect, cap)| Hit { rect, action: Action::Type(cap) }).collect();
+    (Dock { canvas: c, hits }, t.m.h as f32 - height)
 }
 
 /// Finding a feature or partition: the field where the title would be, the
@@ -1461,35 +1467,42 @@ fn keyboard_hits(c: &mut Canvas, t: &Theme, f: &Fonts, s: &State, enter: &str, o
 pub fn search(cx: &Ctx) -> Frame {
     let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
     let m = &t.m;
-    let mut c = page(cx);
+    // A canvas tall enough for what is found: the list is longer than the
+    // screen whenever the search matches much, and the page scrolls under the
+    // keyboard, so the canvas has to hold the whole of it or the last row's
+    // card is cut off at the edge.
+    let mut c = long_page(cx);
     let mut out = Vec::new();
     let (at, cancel) = widgets::search_layout(t);
     let field = widgets::search_field(&mut c, t, f, at.x, at.w, at.y + at.h / 2.0, &s.search, l.pick(texts::search::HINT));
     widgets::cancel_button(&mut c, t, cancel);
     out.push(Hit { rect: cancel, action: Action::CloseSearch });
     let top = field.field.y + field.field.h + m.dp(12.0);
-    let kb_top = m.h as f32 - widgets::keyboard_height(t);
-    if s.search.trim().is_empty() {
-        widgets::footnote(&mut c, t, f, top, l.pick(texts::search::HOW));
+    let bottom = if s.search.trim().is_empty() {
+        widgets::footnote(&mut c, t, f, top, l.pick(texts::search::HOW))
     } else {
         let found = search::find_on(&s.search, l, |screen| s.offers(screen));
         if found.is_empty() {
             let none = texts::search::none(l, s.search.trim());
-            widgets::list(&mut c, t, f, top, &[Row::new(&none).trail(Trail::None)]);
+            widgets::list(&mut c, t, f, top, &[Row::new(&none).trail(Trail::None)]).bottom
         } else {
             let rows: Vec<Row> = found.iter().map(|e| Row::new(l.pick(e.title)).subtitle(l.pick(e.place))).collect();
             let list = widgets::list(&mut c, t, f, top, &rows);
-            // The keyboard covers what does not fit above it.
-            let shown = list.rows.iter().zip(&found).filter(|(r, _)| r.y + r.h <= kb_top);
-            out.extend(shown.map(|(&rect, e)| Hit { rect, action: Action::Open(e.screen) }));
+            // Every row answers where it shows: the page scrolls under the
+            // keyboard now that the keyboard is held at the bottom rather
+            // than drawn on the page, so a row below the keyboard at rest is
+            // one the finger reaches by scrolling, and it has to answer when
+            // it does.
+            out.extend(list.rows.iter().zip(&found).map(|(&rect, e)| Hit { rect, action: Action::Open(e.screen) }));
+            list.bottom
         }
-    }
+    };
     let find = l.pick(texts::search::SEARCH);
-    keyboard_hits(&mut c, t, f, s, find, &mut out);
+    let (dock, _) = keyboard_dock(t, f, s, find);
     if let Some(rect) = field.clear {
         out.push(Hit { rect, action: Action::ClearSearch });
     }
-    Frame { back: false, header: false, caret: Some(field.caret), ..Frame::new(t, c, out, find, 0.0) }
+    Frame { back: false, header: false, caret: Some(field.caret), dock: Some(dock), ..Frame::new(t, fit(c, t, bottom), out, find, 0.0) }
 }
 
 /// Backing up: what to take, where it goes, and how.
@@ -2528,8 +2541,8 @@ pub fn wlan_password(cx: &Ctx) -> Frame {
     let (y, caret) = widgets::text_field(&mut c, t, f, y, &shown);
     let show = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(texts::wlan::SHOW_PASSWORD)).trail(Trail::Switch(s.show_password))]);
     out.extend(hits(&show.rows, &[Action::Toggle(Switch::ShowPassword)]));
-    keyboard_hits(&mut c, t, f, s, l.pick(texts::wlan::CONNECT), &mut out);
-    Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(texts::wlan::ENTER_PASSWORD), top) }
+    let (dock, _) = keyboard_dock(t, f, s, l.pick(texts::wlan::CONNECT));
+    Frame { caret: Some(caret), dock: Some(dock), ..Frame::new(t, c, out, l.pick(texts::wlan::ENTER_PASSWORD), top) }
 }
 
 /// A network added by hand: its name, how it is protected, its password
@@ -2563,9 +2576,9 @@ pub fn wlan_add(cx: &Ctx) -> Frame {
         let show = widgets::list(&mut c, t, f, below + m.card_gap, &[Row::new(l.pick(texts::wlan::SHOW_PASSWORD)).trail(Trail::Switch(s.show_password))]);
         out.extend(hits(&show.rows, &[Action::Toggle(Switch::ShowPassword)]));
     }
-    keyboard_hits(&mut c, t, f, s, l.pick(texts::wlan::CONNECT), &mut out);
+    let (dock, _) = keyboard_dock(t, f, s, l.pick(texts::wlan::CONNECT));
     if !a.choosing {
-        return Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(texts::wlan::ADD_NETWORK), top) };
+        return Frame { caret: Some(caret), dock: Some(dock), ..Frame::new(t, c, out, l.pick(texts::wlan::ADD_NETWORK), top) };
     }
     // A touch anywhere off the list closes it.
     out.clear();
@@ -2825,8 +2838,8 @@ pub fn rename(cx: &Ctx) -> Frame {
     let top = t.m.content_top;
     let (y, caret) = widgets::text_field(&mut c, t, f, top, &s.new_name);
     widgets::footnote(&mut c, t, f, y, l.pick(texts::files::RENAME_NOTE));
-    keyboard_hits(&mut c, t, f, s, l.pick(texts::common::DONE), &mut out);
-    Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(texts::files::RENAME), top) }
+    let (dock, _) = keyboard_dock(t, f, s, l.pick(texts::common::DONE));
+    Frame { caret: Some(caret), dock: Some(dock), ..Frame::new(t, c, out, l.pick(texts::files::RENAME), top) }
 }
 
 /// The folder an entry goes to already holds its name: what to do.
@@ -2922,13 +2935,13 @@ pub fn terminal(cx: &Ctx) -> Frame {
     let mut c = page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    keyboard_hits(&mut c, t, f, s, s.lang.pick(texts::keyboard::ENTER), &mut out);
+    let (dock, _) = keyboard_dock(t, f, s, s.lang.pick(texts::keyboard::ENTER));
     let l = term::layout(t, f, top);
     term::draw(&mut c, t, f, &l, cx.term);
     let held = cx.term.is_some_and(|term| term.ctrl);
     let keys = term::keys(&mut c, t, f, &l, &term::TERM_KEYS, held);
     out.extend(keys.into_iter().map(|(rect, key)| Hit { rect, action: Action::TermKey(key) }));
-    Frame { scrollback: Some((l.card, l.pitch)), ..Frame::new(t, c, out, s.lang.pick(texts::page::TERMINAL), top) }
+    Frame { scrollback: Some((l.card, l.pitch)), dock: Some(dock), ..Frame::new(t, c, out, s.lang.pick(texts::page::TERMINAL), top) }
 }
 
 /// A text file being edited: where it is, its lines wrapped on a card, the
@@ -2939,14 +2952,14 @@ pub fn editor(cx: &Ctx) -> Frame {
     let ed = s.editor.as_ref().expect("the editor page shows a file");
     let mut c = page(cx);
     let mut out = Vec::new();
-    keyboard_hits(&mut c, t, f, s, s.lang.pick(texts::keyboard::NEW_LINE), &mut out);
+    let (dock, _) = keyboard_dock(t, f, s, s.lang.pick(texts::keyboard::NEW_LINE));
     editor::caption(&mut c, t, f, &ed.path);
     let l = editor::layout(t, f);
     let caret = editor::draw(&mut c, t, f, &l, ed);
     let keys = term::keys(&mut c, t, f, &l, &editor::EDITOR_KEYS, false);
     out.extend(keys.into_iter().map(|(rect, key)| Hit { rect, action: Action::TermKey(key) }));
     let button = ed.changed.then_some((widgets::Glyph::Done, Action::SaveText));
-    Frame { scrollback: Some((l.card, l.pitch)), caret, button, ..Frame::new(t, c, out, s.lang.pick(texts::files::EDIT), t.m.content_top) }
+    Frame { scrollback: Some((l.card, l.pitch)), caret, button, dock: Some(dock), ..Frame::new(t, c, out, s.lang.pick(texts::files::EDIT), t.m.content_top) }
 }
 
 /// The languages the pages speak, each named in itself, to speak another.

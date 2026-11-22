@@ -2,7 +2,15 @@
 
 # Skyward
 
-> OnePlus Ace 6 (ossi) port: see [ONEPLUS-ACE6.md](ONEPLUS-ACE6.md).
+> **This is a modified version of Skyward.** It is ported to the OnePlus Ace 6
+> (PLQ110 / `ossi`) by Liuyimeng1024, and is not an official release of Skyward
+> or of OnePlus. What changed, and why, is in
+> [ONEPLUS-ACE6.md](ONEPLUS-ACE6.md); the commits say the same thing one change
+> at a time.
+>
+> Upstream: <https://github.com/kirklin/skyward> · GPL-3.0-or-later · see
+> [LICENSE](LICENSE). Copyright (C) 2026 Kirk Lin — original Skyward;
+> Copyright (C) 2026 Liuyimeng1024 — the OnePlus Ace 6 port.
 
 English | [简体中文](README.zh-CN.md)
 
