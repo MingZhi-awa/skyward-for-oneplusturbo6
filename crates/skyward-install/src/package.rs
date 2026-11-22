@@ -177,9 +177,16 @@ pub fn check(update: &Update, phone: &Phone) -> Result<(), Refusal> {
     Ok(())
 }
 
-/// Whether `name` is one of the `|`-separated names in `list`.
+/// Whether `name` is one of the names in `list`.
+///
+/// A package's own metadata writes the names it will be flashed on separated
+/// by `|`, as AOSP's `ota_from_target_files` writes them, and Android's
+/// recovery splits on that alone. Some makers' packages write them separated
+/// by commas instead: this phone's full package says `OP6113L1,PLQ110`, and a
+/// recovery that split only on `|` would read that as one name and refuse a
+/// package meant for the phone it is running on. Both separators are taken.
 fn listed(name: &str, list: &str) -> bool {
-    list.split('|').any(|n| n.trim() == name)
+    list.split(['|', ',']).any(|n| n.trim() == name)
 }
 
 #[cfg(test)]

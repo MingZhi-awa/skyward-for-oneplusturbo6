@@ -11,14 +11,20 @@ use std::time::{Duration, Instant};
 
 static MTP: AtomicBool = AtomicBool::new(false);
 
-/// What the port offers while nothing else has it. The file transfer
-/// function is offered beside adb only once it has its descriptors: a
-/// recovery whose own rules never bring that function up, as OPLUS's stock
-/// recovery does not, keeps adb alone rather than losing the port to a
-/// configuration init cannot make.
+/// What the port offers while nothing else has it: file transfer where it is
+/// turned on and its function has its descriptors, adb otherwise.
+///
+/// The two do not go together on every phone. This one's port resets when
+/// both functions sit in one configuration: the computer sees the device
+/// leave and come back, adb drops with it, and no command outlives a second.
+/// So the port carries one or the other, never both, and the switch in the
+/// settings page chooses which. Where the function has no descriptors yet — a
+/// recovery whose own rules never bring it up, as OPLUS's stock recovery does
+/// not — the port stays on adb rather than losing itself to a configuration
+/// init cannot make.
 pub fn resting() -> &'static str {
     if MTP.load(Ordering::Relaxed) && prop("sys.usb.ffs.mtp.ready").as_deref() == Some("1") {
-        "mtp,adb"
+        "mtp"
     } else {
         "adb"
     }

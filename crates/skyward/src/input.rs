@@ -27,23 +27,40 @@ pub fn monotonic_ms() -> u64 {
     ts.tv_sec as u64 * 1000 + ts.tv_nsec as u64 / 1_000_000
 }
 
-/// The command OPLUS's touch driver answers to turn its interrupt on, from
+/// The command OPLUS's touch driver answers to turn its interrupt on, and the
+/// one that sets how much it logs, from
 /// vendor/oplus/kernel/tp/hbp/hbp/hbp_device.c:
 ///
 /// ```c
-/// #define HBP_IOCTRL_GROUP      0xC5
-/// #define HBP_IOCTRL_IRQ_ENABLE _IO(HBP_IOCTRL_GROUP, 0x0A)
+/// #define HBP_IOCTRL_GROUP          0xC5
+/// #define HBP_IOCTRL_IRQ_ENABLE     _IO(HBP_IOCTRL_GROUP, 0x0A)
+/// #define HBP_IOCTRL_SET_DEBUG_LEVEL _IO(HBP_IOCTRL_GROUP, 0x14)
 /// ...
 /// case HBP_IOCTRL_IRQ_ENABLE:
 ///     hbp_set_irq_status(hbp_dev, usr.val);
+/// case HBP_IOCTRL_SET_DEBUG_LEVEL:
+///     set_debug_level(usr.val);
 /// ```
 const HBP_IOCTRL_IRQ_ENABLE: libc::c_int = 0xC50A;
+const HBP_IOCTRL_SET_DEBUG_LEVEL: libc::c_int = 0xC514;
+
+/// The least the driver logs: only what it calls fatal, which it does not
+/// reach in this build. Its levels are
+/// `FATAL 1, ERR 2, WARN 3, INFO 4, CACHE 5, DEBUG 6`, and it starts at INFO.
+///
+/// Left at INFO, every touch it reports is written to the kernel log as a
+/// line of hex and a line of coordinates, which on this phone comes to
+/// thousands of lines a second while a finger moves: the log ring fills, the
+/// log's own writers take the CPU, and the phone stops answering. The
+/// kernel log showed the driver's parse of each report at a load average of
+/// nearly thirteen, and the phone then went down.
+const HBP_LOG_FATAL: i64 = 1;
 
 /// The node the report side of that driver answers on. Opening it does not
 /// put the panel in hbp mode, which only `/dev/hbp_core` does.
 const HBP_REPORT: &str = "/dev/hbp0";
 
-/// Turn the touchscreen's interrupt on.
+/// Turn the touchscreen's interrupt on, and its logging down to nothing.
 ///
 /// On phones whose panel driver goes through OPLUS's hbp layer, the
 /// interrupt is left off until a program asks for it, and the kernel then
@@ -53,22 +70,33 @@ const HBP_REPORT: &str = "/dev/hbp0";
 /// fires, and the UI shows its pages and takes no touch.
 ///
 /// The driver takes a union whose first member is `int64_t val`, so the
-/// value goes at the start of what is handed over. Once set the interrupt
-/// stays on after the port is closed, so this runs once and lets go.
+/// value goes at the start of what is handed over. Once set both stay as
+/// they were set after the port is closed, so this runs once and lets go.
 pub fn wake_touch_interrupt() -> Result<()> {
+    ask_driver(HBP_IOCTRL_IRQ_ENABLE, 1).context("ask for the touchscreen's interrupt")?;
+    // The level is not a reason to fail: a driver that does not take it
+    // leaves the interrupt on, which is what makes the panel work.
+    if let Err(e) = ask_driver(HBP_IOCTRL_SET_DEBUG_LEVEL, HBP_LOG_FATAL) {
+        let _ = skyward_sys::kmsg(&format!("the touch driver keeps its own log level: {e:#}"));
+    }
+    Ok(())
+}
+
+/// Hand `value` to the touch driver as the argument of `command`.
+fn ask_driver(command: libc::c_int, value: i64) -> Result<()> {
     let fd = unsafe { libc::open(c_path(HBP_REPORT)?.as_ptr(), libc::O_RDWR | libc::O_CLOEXEC) };
     if fd < 0 {
         return Err(io::Error::last_os_error()).with_context(|| format!("open {HBP_REPORT}"));
     }
     // The union the driver reads: int64_t val, then room for the structures
-    // of the other commands, which this one does not use.
+    // of the other commands, which these do not use.
     let mut usr = [0u8; 128];
-    usr[..8].copy_from_slice(&1i64.to_ne_bytes());
-    let rc = unsafe { libc::ioctl(fd, HBP_IOCTRL_IRQ_ENABLE, usr.as_mut_ptr()) };
+    usr[..8].copy_from_slice(&value.to_ne_bytes());
+    let rc = unsafe { libc::ioctl(fd, command, usr.as_mut_ptr()) };
     let err = io::Error::last_os_error();
     unsafe { libc::close(fd) };
     if rc < 0 {
-        return Err(err).with_context(|| format!("ask {HBP_REPORT} for the touchscreen's interrupt"));
+        return Err(err).with_context(|| format!("hand 0x{command:x} to {HBP_REPORT}"));
     }
     Ok(())
 }
