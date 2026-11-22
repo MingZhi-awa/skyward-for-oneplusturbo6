@@ -10,6 +10,7 @@
 
 pub mod catalog;
 pub mod chapter;
+pub mod rank;
 mod table;
 
 pub use table::WORDS;
@@ -22,6 +23,11 @@ pub const BASE: &str = "https://fanqienovel.com";
 /// off.
 pub const USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+/// The address of the rankings, which name every category they have.
+pub fn rank_url() -> String {
+    format!("{BASE}/rank")
+}
 
 /// The address of a book's page, which carries its whole catalogue.
 pub fn book_url(book: &str) -> String {

@@ -40,7 +40,7 @@ pub fn parse(html: &str) -> Result<Chapter> {
     };
     let mut paragraphs = Vec::new();
     for raw in body.split("</p>") {
-        let text = plain(raw);
+        let text = text_of(raw);
         if text.is_empty() {
             continue;
         }
@@ -60,8 +60,8 @@ pub fn parse(html: &str) -> Result<Chapter> {
 /// element carries the chapter's name alone, and is preferred where it is
 /// there.
 fn title_of(html: &str) -> Option<(String, Option<String>)> {
-    let page = between(html, "<title>", "</title>").map(plain)?;
-    let nav = between(html, "muye-reader-nav-title\">", "<").map(plain);
+    let page = between(html, "<title>", "</title>").map(text_of)?;
+    let nav = between(html, "muye-reader-nav-title\">", "<").map(text_of);
     let mut chapter = page.as_str();
     for after in AFTER_TITLE {
         if let Some(at) = chapter.find(after) {
@@ -127,7 +127,7 @@ fn between<'a>(text: &'a str, open: &str, close: &str) -> Option<&'a str> {
 
 /// The text of a piece of html: its tags gone, its entities as what they
 /// name, and its lines trimmed.
-fn plain(html: &str) -> String {
+pub(crate) fn text_of(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut in_tag = false;
     for c in html.chars() {
