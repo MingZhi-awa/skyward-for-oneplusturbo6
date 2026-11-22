@@ -17,6 +17,7 @@ members = [
     "crates/skyward-install",
     "crates/skyward-mtp",
     "crates/skyward-net",
+    "crates/skyward-novel",
     "crates/skyward-preview",
     "crates/skyward-pack",
     "crates/skyward-sys",

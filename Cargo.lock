@@ -2656,6 +2656,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "skyward-novel"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "skyward-omapi"
 version = "0.3.1"
 dependencies = [
