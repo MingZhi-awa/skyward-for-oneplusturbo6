@@ -2,13 +2,15 @@
 
 # Skyward
 
-> **本仓库是 Skyward 的修改版**，由 Liuyimeng1024 移植到一加 Ace 6（PLQ110 / `ossi`），
-> 不是 Skyward 或一加的官方发布。改了什么、为什么改，见
+> **本仓库是 Skyward 的修改版**，由 MingZhi 从 Liuyimeng1024 的一加 Ace 6（PLQ110 / `ossi`）
+> 移植到一加 Turbo 6（PLU110 / `op60f0l1`），不是 Skyward 或一加的官方发布。
+> 改了什么、为什么改，本机见 [ONEPLUS-TURBO6.md](ONEPLUS-TURBO6.md)，所基于的移植见
 > [ONEPLUS-ACE6.md](ONEPLUS-ACE6.md)；git 提交记录按改动逐条记录同样的事。
 >
 > 上游：<https://github.com/kirklin/skyward> · GPL-3.0-or-later · 见
 > [LICENSE](LICENSE)。Copyright (C) 2026 Kirk Lin — 上游 Skyward；
-> Copyright (C) 2026 Liuyimeng1024 — 一加 Ace 6 移植。
+> Copyright (C) 2026 Liuyimeng1024 — 一加 Ace 6 移植；
+> Copyright (C) 2026 MingZhi — 一加 Turbo 6 移植。
 
 [English](README.md) | 简体中文
 

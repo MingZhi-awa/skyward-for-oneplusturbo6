@@ -281,8 +281,16 @@ impl App {
                 .frame
                 .as_ref()
                 .and_then(|fr| [was, held].into_iter().flatten().map(|a| fr.hits.iter().find(|h| h.action == a).map(|h| h.rect)).collect());
+            // A key of the keyboard held at the foot of the page is drawn on
+            // that keyboard, apart from the page, which keeps as it is.
+            let on_dock = self
+                .frame
+                .as_ref()
+                .and_then(|fr| fr.dock.as_ref())
+                .is_some_and(|d| [was, held].into_iter().flatten().all(|a| d.hits.iter().any(|h| h.action == a)));
             match rects {
                 Some(rects) => rects.into_iter().for_each(|r| self.refresh_rows(r.y.floor() as u32, (r.y + r.h).ceil() as u32)),
+                None if on_dock => self.refresh_dock(),
                 None => self.refresh(),
             }
         }

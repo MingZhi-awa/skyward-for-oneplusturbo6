@@ -1050,8 +1050,17 @@ fn row_part(r: Rect, canvas: &Canvas) -> (u32, u32, u32, u32) {
 }
 
 /// The keyboard at the foot of a typing page's `frame`, and where it rests.
+///
+/// A page that holds its keyboard at the foot draws it apart from itself, its
+/// own canvas; a page that draws it on itself has those rows copied out of
+/// what the page holds.
 fn keyboard_strip(t: &Theme, frame: &Frame) -> (Canvas, i32) {
     let top = (t.m.h as f32 - widgets::keyboard_height(t)).floor() as i32;
+    if let Some(d) = &frame.dock {
+        let mut strip = Canvas::new(d.canvas.w, d.canvas.h);
+        strip.put(&d.canvas, 0);
+        return (strip, top);
+    }
     let mut strip = Canvas::new(frame.canvas.w, (frame.canvas.h as i32 - top).max(0) as u32);
     strip.put_rows(&frame.canvas, top, frame.canvas.h as i32, 0);
     (strip, top)
@@ -1187,6 +1196,9 @@ pub struct App {
     /// Bands of rows of the page drawn that show what has changed since,
     /// to draw again.
     stale: Vec<(u32, u32)>,
+    /// The keyboard held at the foot of the page shows what changed since:
+    /// it is drawn again, and nothing of the page.
+    dock_stale: bool,
     /// How many columns from the left edge of the page's rows drawn are
     /// drawn; a page opened is drawn across as it slides in.
     cols: u32,
@@ -1257,6 +1269,7 @@ impl App {
             turn: None,
             layer: None,
             stale: Vec::new(),
+            dock_stale: false,
             cols: 0,
             backdrop: None,
             corners: 0.0,
@@ -1591,6 +1604,16 @@ impl App {
         self.shown = None;
         self.layer = None;
         self.spare.extend(self.drawn.drain(..).map(|(_, c)| c));
+        self.dirty = true;
+    }
+
+    /// The keyboard held at the foot of the page changed: draw it again, and
+    /// nothing of the page under it.
+    fn refresh_dock(&mut self) {
+        if self.frame.as_ref().is_none_or(|fr| fr.dock.is_none()) {
+            return self.refresh();
+        }
+        self.dock_stale = true;
         self.dirty = true;
     }
 

@@ -2834,7 +2834,7 @@ pub fn permissions(cx: &Ctx) -> Frame {
 pub fn rename(cx: &Ctx) -> Frame {
     let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
     let mut c = page(cx);
-    let mut out = Vec::new();
+    let out = Vec::new();
     let top = t.m.content_top;
     let (y, caret) = widgets::text_field(&mut c, t, f, top, &s.new_name);
     widgets::footnote(&mut c, t, f, y, l.pick(texts::files::RENAME_NOTE));

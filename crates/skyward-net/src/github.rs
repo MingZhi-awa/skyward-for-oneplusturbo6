@@ -10,7 +10,10 @@ use serde::Deserialize;
 /// phones, and none of its zips is for this one, so asking it would offer an
 /// update that can never be installed. The port's releases carry this
 /// phone's build, and its tags carry the port's own suffix.
-pub const LATEST: &str = "https://api.github.com/repos/liuyimeng1024-ui/skyward-for-oneplusace6/releases/latest";
+///
+/// The Ace 6 port this one was cut from answers for the Ace 6, whose zips the
+/// phone this build runs on cannot take, so its releases are not asked either.
+pub const LATEST: &str = "https://api.github.com/repos/MingZhi-awa/skyward-for-oneplusturbo6/releases/latest";
 
 /// The version of GitHub's API the answer is read as.
 const API_VERSION: &str = "2022-11-28";

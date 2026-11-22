@@ -238,6 +238,31 @@ down/up，或者干脆先 down 再 up）。
    ramdisk 在 `4096 + kernel_size`、magic `02 21 4c 18`（lz4 legacy），`lz4 -d | cpio -i --to-stdout
    system/bin/recovery` 抠出二进制后 `grep -a` 找新加的字符串。
 
+## Ace 6 `3909c9c`：键盘改成独立 dock 之后
+
+Ace 6 的 `fix(ui): hold the keyboard at the foot of the page` 把键盘从“画在页面上”改成
+`Frame.dock`（自己的画布，贴在屏幕底部，页面在它下面滚动），并把收更新地址换成了他们自己的仓库。
+合过来之后有两处必须跟着改，否则搜索页会直接 panic（`put_rows` 的 “the rows put are held”）：
+
+1. **`keyboard_strip` 要认 dock**。它原来是把页面底部那几行键盘从页面画布里拷出来，给搜索栏
+   上滑/回落动画用；键盘搬进 dock、页面又变成可滚动的长页之后，页面底部那几行根本不在
+   画布里（高度 4616 的画布只画了 0..3200）。现在有 dock 就直接拷 dock 的画布。
+2. **打字只重画键盘**。`input.rs` 里找“按下/抬起的那颗键”的矩形只在页面的 `hits` 里找，
+   dock 上的键找不到就退化成整页重画。改成：页面里没有就在 `frame.dock.hits` 里找，
+   命中则走新的 `refresh_dock()`——下一帧只重画 dock，页面一个像素都不动。
+3. **页面高度会随内容变**。搜索页现在是长页，结果条数一变高度就变（空搜索 3200，输一个
+   `b` 变 4616），这时候只重画几行是画不对的。`render()` 里比一下新旧高度，不一致就整页重来。
+4. 更新的第 2、3 条和 `a_page_typed_on...`、`the_cursor_blinks...` 两个测试的旧假设对不上，
+   测试改成核对“画布已画出的那些行”与整页重画是否一致，以及“按下键时重画的是 dock 或那几行”。
+
+顺带把 `github.rs` 的 `LATEST` 从 Ace 6 的仓库改回本仓库
+（`MingZhi-awa/skyward-for-oneplusturbo6`）：更新页要查的是本机自己的 release，查 Ace 6
+的仓库只会拿到装不上的 zip。标签 `v0.3.2-plu110` 这种“版本-机型”写法新的解析已经会剥掉后缀。
+
+另外记一笔：`cargo test --workspace` 里 `skyward-backup` 的
+`a_folder_comes_back_as_it_was_archived` 和 `measuring_and_packing_stop_when_asked`
+在本沙盒（proot）里是挂的，未改动的上游树上一样挂，属于环境问题，不是移植引入的。
+
 ## 待办
 
 - [ ] wlan0 `Device or resource busy`：进 recovery 自动做一次 down/up

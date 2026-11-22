@@ -34,6 +34,18 @@ impl App {
     /// [`App::frame`], drawing of a page rendered anew only its columns
     /// from the left edge to `wide`.
     fn render(&mut self, f: &Fonts, info: &DeviceInfo, wide: u32) -> &Frame {
+        if std::mem::take(&mut self.dock_stale) && self.frame.as_ref().is_some_and(|fr| fr.dock.is_some()) {
+            // The keyboard alone is drawn again: the page is laid out with no
+            // row of it drawn, and only what it holds at its foot is kept.
+            let t = self.theme();
+            let screen = self.screen();
+            let band = Band { rows: (0, 0), cols: (0, self.w) };
+            let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band) };
+            let dock = pages::render(screen, &cx).dock;
+            if let Some(frame) = &mut self.frame {
+                frame.dock = dock;
+            }
+        }
         if self.frame.is_some() && !self.stale.is_empty() {
             let t = self.theme();
             let screen = self.screen();
@@ -41,8 +53,15 @@ impl App {
                 let band = Band { rows, cols: (0, self.cols) };
                 let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band) };
                 let fresh = pages::render(screen, &cx);
+                let Some(frame) = &self.frame else { break };
+                // A page that came out another height is a page whose content
+                // changed and not only those rows, as a search's list does
+                // when a letter narrows it: it is laid out and drawn again.
+                if frame.canvas.h != fresh.canvas.h {
+                    self.refresh();
+                    break;
+                }
                 let mut canvas = self.frame.take().expect("checked above").canvas;
-                assert_eq!(canvas.h, fresh.canvas.h, "a page drawn again in part is as tall as it was");
                 canvas.replace(&fresh.canvas);
                 self.frame = Some(Frame { canvas, ..fresh });
             }
@@ -757,16 +776,25 @@ mod tests {
             let t = app.theme();
             pages::render(Screen::Search, &Ctx { t: &t, f: &f, info: &i, state: &app.state, term: None, band: None })
         };
+        // The rows the frame holds, as the page drawn whole has them: a page
+        // longer than the screen is drawn as it comes into view, so those
+        // rows are what there is to compare.
+        let as_anew = |drawn: &Canvas, fresh: &Canvas| {
+            let (held, row) = (drawn.held(), drawn.w as usize * 4);
+            drawn.data == fresh.data[held.start as usize * row..held.end as usize * row]
+        };
         for cap in [Cap::Char('b'), Cap::Char('f'), Cap::Space, Cap::Backspace, Cap::Shift, Cap::Char('q')] {
             let (x, y) = spot(&mut app, &f, &i, Action::Type(cap));
             app.touch(Touch::Down(x, y), &f, 0);
-            assert!(app.frame.is_some() && !app.stale.is_empty() || cap == Cap::Shift, "{cap:?}: the key held is drawn again on its own");
+            // What changed is the keyboard at the foot of the page, drawn
+            // apart from it, or else the rows of the page it lies on.
+            assert!(app.frame.is_some() && (!app.stale.is_empty() || app.dock_stale) || cap == Cap::Shift, "{cap:?}: the key held is drawn again on its own");
             app.compose(&mut out, &f, &i, "12:00", 0);
-            assert!(app.frame.as_ref().unwrap().canvas.data == anew(&app).canvas.data, "{cap:?} held down");
+            assert!(as_anew(&app.frame.as_ref().unwrap().canvas, &anew(&app).canvas), "{cap:?} held down");
             app.touch(Touch::Up, &f, 0);
             app.compose(&mut out, &f, &i, "12:00", 0);
             let (drawn, fresh) = (app.frame.as_ref().unwrap(), anew(&app));
-            assert!(drawn.canvas.data == fresh.canvas.data, "{cap:?} typed");
+            assert!(as_anew(&drawn.canvas, &fresh.canvas), "{cap:?} typed");
             assert_eq!(drawn.hits.iter().map(|h| h.action).collect::<Vec<_>>(), fresh.hits.iter().map(|h| h.action).collect::<Vec<_>>(), "{cap:?} typed");
         }
         assert_eq!(app.state.search, "bfQ");

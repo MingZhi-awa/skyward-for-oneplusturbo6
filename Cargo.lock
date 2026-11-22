@@ -2657,7 +2657,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-novel"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "serde",
