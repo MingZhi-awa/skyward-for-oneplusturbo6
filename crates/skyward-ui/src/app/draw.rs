@@ -702,6 +702,7 @@ mod tests {
             Screen::Terminal,
             Screen::Language,
             Screen::TimeZone,
+            Screen::TimeZones(Region::Asia),
             Screen::Logs,
             Screen::Update,
             Screen::SkywardUpdate,
