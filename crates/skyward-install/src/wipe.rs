@@ -2,7 +2,7 @@
 //! for good: it is signed with the keys the phone takes its updates signed
 //! with, says it is for this phone, and lists the partitions to discard.
 
-use crate::package::{Metadata, Phone};
+use crate::package::{listed, Metadata, Phone};
 use crate::signature::{self, Verdict};
 use crate::Refusal;
 use anyhow::{Context, Result};
@@ -73,7 +73,7 @@ fn check(metadata: &Metadata, phone: &Phone, tags: &str) -> Result<(), Refusal> 
         return Err(Refusal::NotBrick(kind.to_string()));
     }
     let devices = metadata.get("pre-device").unwrap_or_default();
-    if !devices.split('|').any(|name| name.trim() == phone.device) {
+    if !listed(&phone.device, devices) {
         return Err(Refusal::OtherDevice(devices.to_string()));
     }
     match metadata.get("serialno") {

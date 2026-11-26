@@ -135,7 +135,10 @@ fn main() -> Result<()> {
                 anyhow::bail!("{} holds {}, which is not a stock recovery", stock.display(), e.name);
             }
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
-            skyward_config::DeviceConfig::load(&config)?;
+            let cfg = skyward_config::DeviceConfig::load(&config)?;
+            // The name the phone answers to in its own build and in its update
+            // packages, where that is not the codename this recovery goes by.
+            let product_device = cfg.device.product_device.clone();
             rd.replace(paths::RECOVERY, read(&binary)?)?;
             // Install scripts look for the commands a stock recovery lacks
             // among its programs, and its unzip there too, a link to ziptool
@@ -180,10 +183,7 @@ fn main() -> Result<()> {
                 .find(paths::PROP_DEFAULT)
                 .with_context(|| format!("{} is not in the ramdisk", paths::PROP_DEFAULT))?
                 .data;
-            let drop: Vec<&str> = BUILD_VERSION.iter().chain(REPLACED.iter()).copied().collect();
-            let mut props = without(stock_props, &drop);
-            props.extend_from_slice(b"\nro.secure=0\nro.adb.secure=0\nro.debuggable=1\nro.ota.allow_downgrade=true\n");
-            rd.replace(paths::PROP_DEFAULT, props)?;
+            rd.replace(paths::PROP_DEFAULT, recovery_props(stock_props, product_device.as_deref()))?;
             img.ramdisk = rd.encode()?;
             let bytes = img.to_bytes()?;
             write(&out, &img, &avb::footed(&bytes, "recovery", size, &Sha256::digest(&bytes))?)
@@ -267,6 +267,10 @@ const BUILD_VERSION: [&str; 3] = ["ro.build.version.release", "ro.build.version.
 /// stock's value is read for them whatever order init takes.
 const REPLACED: [&str; 4] = ["ro.secure", "ro.adb.secure", "ro.debuggable", "ro.ota.allow_downgrade"];
 
+/// The property the phone's own build, and its update packages, name the phone
+/// by.
+const DEVICE_NAME: &str = "ro.product.device";
+
 /// The scheduling profiles a recovery's programs look up by name. A
 /// recovery's cgroup setup mounts no controllers, so of all a system's
 /// profiles do, only the timer slack applies here.
@@ -275,6 +279,25 @@ const TASK_PROFILES: &[u8] = include_bytes!("task_profiles.json");
 /// The init rules that give the USB port file transfer beside adb, which a
 /// stock recovery does not offer.
 const MTP_RC: &[u8] = include_bytes!("mtp.rc");
+
+/// The recovery's own property file, from the stock one. The build's version
+/// values go, since the installed system's are adopted instead; so do the
+/// properties set here below, whose stock lines init would read first. The
+/// phone's own device name goes in where the configuration gives one: init
+/// sets a read-only property once, from the first file it reads, and the
+/// recovery's packages name the phone by that.
+fn recovery_props(stock: &[u8], product_device: Option<&str>) -> Vec<u8> {
+    let mut drop: Vec<&str> = BUILD_VERSION.iter().chain(REPLACED.iter()).copied().collect();
+    if product_device.is_some() {
+        drop.push(DEVICE_NAME);
+    }
+    let mut props = without(stock, &drop);
+    props.extend_from_slice(b"\nro.secure=0\nro.adb.secure=0\nro.debuggable=1\nro.ota.allow_downgrade=true\n");
+    if let Some(device) = product_device {
+        props.extend_from_slice(format!("\n{DEVICE_NAME}={device}\n").as_bytes());
+    }
+    props
+}
 
 /// A property file without the lines that set any of `names`.
 fn without(props: &[u8], names: &[&str]) -> Vec<u8> {
@@ -467,5 +490,24 @@ ro.vendor.build.security_patch=2026-10-01\nro.vendor.build.security_patch_level=
         assert_eq!(out, b"a=1\n");
         let kept = without(b"a=1\nb=2", &BUILD_VERSION);
         assert_eq!(kept, b"a=1\nb=2");
+    }
+
+    #[test]
+    fn the_recovery_answers_to_the_device_name_the_phone_itself_uses() {
+        // The stock file's line goes, and the configured name goes in: init
+        // reads this file first, and sets a read-only property only once.
+        let stock = b"ro.product.device=op60f0l1\nro.build.version.release=16\nro.secure=1\n";
+        let props = String::from_utf8(recovery_props(stock, Some("OP60F0L1"))).unwrap();
+        assert!(props.contains("\nro.product.device=OP60F0L1\n"), "{props}");
+        assert!(!props.contains("=op60f0l1"), "the stock line is the one that goes: {props}");
+        assert!(!props.contains("ro.build.version.release"), "the installed system's version is adopted instead: {props}");
+        assert!(props.contains("ro.secure=0"), "the recovery's own values are the ones read: {props}");
+    }
+
+    #[test]
+    fn a_phone_whose_codename_is_its_device_name_gets_no_line() {
+        let stock = b"ro.product.device=ishtar\n";
+        let props = String::from_utf8(recovery_props(stock, None)).unwrap();
+        assert!(props.contains("ro.product.device=ishtar"), "nothing to say, so the stock line stays: {props}");
     }
 }

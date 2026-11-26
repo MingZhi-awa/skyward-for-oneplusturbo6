@@ -185,8 +185,23 @@ pub fn check(update: &Update, phone: &Phone) -> Result<(), Refusal> {
 /// by commas instead: this phone's full package says `OP6113L1,PLQ110`, and a
 /// recovery that split only on `|` would read that as one name and refuse a
 /// package meant for the phone it is running on. Both separators are taken.
-fn listed(name: &str, list: &str) -> bool {
-    list.split(['|', ',']).any(|n| n.trim() == name)
+pub(crate) fn listed(name: &str, list: &str) -> bool {
+    let names = || list.split(['|', ',']).map(str::trim);
+    if names().any(|n| n == name) {
+        return true;
+    }
+    // A maker's package and the phone's own property files do not always agree
+    // on the case of a device name: this phone's build says OP60F0L1 where its
+    // recovery came up answering to op60f0l1. The case tells no two phones
+    // apart, so a name that differs in nothing else is taken, and the log says
+    // so, for a package that then fails to install for some other reason.
+    if let Some(said) = names().find(|n| n.eq_ignore_ascii_case(name)) {
+        let _ = skyward_sys::kmsg(&format!(
+            "install: the package names {said}, the phone answers to {name}: taken, they differ in case alone"
+        ));
+        return true;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -244,6 +259,15 @@ METADATA_SIZE=1024
     fn the_same_build_may_be_installed_again() {
         let same = METADATA_TEXT.replace("1781000000", "1778243655");
         assert_eq!(check(&update_with(&same, PROPERTIES_TEXT), &phone()), Ok(()));
+    }
+
+    #[test]
+    fn a_name_that_differs_in_case_alone_is_the_same_phone() {
+        // This phone's full package names it OP60F0L1, where the recovery came
+        // up answering to op60f0l1, and the package was refused as another
+        // phone's. Case tells no two phones apart.
+        let other_case = METADATA_TEXT.replace("pre-device=ishtar", "pre-device=ISHTAR");
+        assert_eq!(check(&update_with(&other_case, PROPERTIES_TEXT), &phone()), Ok(()));
     }
 
     #[test]

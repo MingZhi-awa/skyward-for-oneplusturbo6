@@ -4,6 +4,17 @@
 # Turbo 6 (PLU110). It is not the Ace 6 (PLQ110, ossi, project 0x6113) and not
 # the Ace 6T (PLR110): an image made for those does not start here.
 codename = "op60f0l1"
+# What the phone answers to `ro.product.device`. Its own build says OP60F0L1 in
+# capitals, and its full update packages name the phone by that in their
+# metadata; update_engine compares the two before it writes anything. The
+# stock recovery's property files never set this, so the recovery came up
+# answering to the codename below instead, and the phone's own package was
+# refused as one made for another phone. It is written into the recovery's
+# prop.default from here, where init sets it once and only once.
+#
+# The codename above stays as it is: backups are named with it and refuse to be
+# restored on another phone, and the recovery's own releases are named with it.
+product_device = "OP60F0L1"
 brand = "OnePlus"
 model = "OnePlus Turbo 6"
 ab = true

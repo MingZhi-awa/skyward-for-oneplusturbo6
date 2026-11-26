@@ -1318,7 +1318,7 @@ fn finished(
             next.bottom
         }
         Outcome::Refused(r) => {
-            let reason = fmt::refusal(l, r, &cx.info.codename, source, cx.state.time_zone);
+            let reason = fmt::refusal(l, r, &cx.info.device, source, cx.state.time_zone);
             let y = widgets::list(c, t, f, top, &[standing(l.pick(installed::CANT_INSTALL), ORANGE, Icon::Install, &reason)]).bottom;
             // What the system asked for and did not go in leaves the phone
             // where it was, from which it may go back to the system.
@@ -2144,7 +2144,7 @@ pub fn part_work(cx: &Ctx) -> Frame {
         None if work.asked => notes.push(l.pick(leaving).into()),
         None => notes.push(verb.hold_on(l)),
         Some(Err(stop)) => {
-            let (what, detail) = fmt::part_stop(l, stop, &cx.info.codename);
+            let (what, detail) = fmt::part_stop(l, stop, &cx.info.device);
             notes.push(what);
             notes.extend(detail);
         }

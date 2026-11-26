@@ -35,6 +35,11 @@ const SYS_BLOCK: &str = "/sys/class/block";
 pub struct DeviceInfo {
     pub model: String,
     pub codename: String,
+    /// `ro.product.device`: the name the phone's own build knows it by, and
+    /// the one its update packages name it by. A recovery whose property
+    /// files set none answers to the codename instead, which is what this
+    /// says then.
+    pub device: String,
     pub soc: Option<skyward_config::Names>,
     pub cpu: Cpu,
     /// `MemTotal` in KiB.
@@ -164,6 +169,9 @@ pub fn collect_with(cfg: &DeviceConfig, battery: Option<Battery>) -> Result<Devi
         // system whose partitions are not mounted.
         model: system.get("ro.product.marketname").unwrap_or_else(|| cfg.device.model.clone()),
         codename: cfg.device.codename.clone(),
+        device: skyward_sys::prop("ro.product.device")
+            .or_else(|| cfg.device.product_device.clone())
+            .unwrap_or_else(|| cfg.device.codename.clone()),
         soc: cfg.device.soc.clone(),
         cpu: cpu(Path::new(CPU))?,
         ram_kib: mem_total(&read("/proc/meminfo")?)?,

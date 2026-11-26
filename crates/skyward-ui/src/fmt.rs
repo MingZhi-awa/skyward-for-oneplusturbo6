@@ -565,11 +565,11 @@ pub fn item_end(l: Lang, end: &ItemEnd, verb: Verb) -> String {
 }
 
 /// Why work on whole partitions stopped before going through them, on a
-/// phone whose codename is `codename`, and the details behind it when
-/// there are any.
-pub fn part_stop(l: Lang, stop: &PartStop, codename: &str) -> (String, Option<String>) {
+/// phone that answers to `device`, and the details behind it when there are
+/// any.
+pub fn part_stop(l: Lang, stop: &PartStop, device: &str) -> (String, Option<String>) {
     match stop {
-        PartStop::Refused(r) => (erase_request_refusal(l, r, codename), None),
+        PartStop::Refused(r) => (erase_request_refusal(l, r, device), None),
         PartStop::Unmounted(base) => (texts::mount::first_then_retry(l, base), None),
         PartStop::Failed(why) => (l.pick(texts::common::UNEXPECTED).into(), Some(why.clone())),
     }
@@ -808,9 +808,10 @@ fn sent(source: Source) -> bool {
     }
 }
 
-/// Why a package from `source` was not installed, for a phone with this
-/// codename, its dates in the zone at `zone` in [`TIME_ZONES`].
-pub fn refusal(l: Lang, r: &Refusal, codename: &str, source: Source, zone: usize) -> String {
+/// Why a package from `source` was not installed, for a phone that answers to
+/// `device` by `ro.product.device`, its dates in the zone at `zone` in
+/// [`TIME_ZONES`].
+pub fn refusal(l: Lang, r: &Refusal, device: &str, source: Source, zone: usize) -> String {
     use texts::install::refused;
     let said = |text: Text| l.pick(text).to_string();
     match (r, sent(source)) {
@@ -822,7 +823,7 @@ pub fn refusal(l: Lang, r: &Refusal, codename: &str, source: Source, zone: usize
         (Refusal::NotAb(kind), false) if kind.is_empty() => said(refused::UNTYPED_CHOOSE),
         (Refusal::NotAb(kind), true) => refused::not_ab_send(l, kind),
         (Refusal::NotAb(kind), false) => refused::not_ab_choose(l, kind),
-        (Refusal::OtherDevice(devices), _) => refused::other_device(l, devices, codename),
+        (Refusal::OtherDevice(devices), _) => refused::other_device(l, devices, device),
         (Refusal::OtherSerial, _) => said(refused::OTHER_SERIAL),
         (Refusal::Incremental, true) => said(refused::INCREMENTAL_SEND),
         (Refusal::Incremental, false) => said(refused::INCREMENTAL_CHOOSE),
@@ -844,15 +845,15 @@ pub fn refusal(l: Lang, r: &Refusal, codename: &str, source: Source, zone: usize
 }
 
 /// Why the system's request to erase the partitions it lists was not
-/// carried out, on a phone whose codename is `codename`.
-pub fn erase_request_refusal(l: Lang, r: &Refusal, codename: &str) -> String {
+/// carried out, on a phone that answers to `device`.
+pub fn erase_request_refusal(l: Lang, r: &Refusal, device: &str) -> String {
     use texts::erase_request::refused;
     match r {
         Refusal::Unsigned => l.pick(refused::UNSIGNED).into(),
         Refusal::Unverified => l.pick(refused::UNVERIFIED).into(),
         Refusal::NotBrick(kind) if kind.is_empty() => l.pick(refused::UNTYPED).into(),
         Refusal::NotBrick(kind) => refused::typed(l, kind),
-        Refusal::OtherDevice(devices) => refused::other_device(l, devices, codename),
+        Refusal::OtherDevice(devices) => refused::other_device(l, devices, device),
         Refusal::OtherSerial => l.pick(refused::OTHER_SERIAL).into(),
         Refusal::NoSerial => l.pick(refused::NO_SERIAL).into(),
         other => unreachable!("a request to erase partitions is not refused as {other:?}"),

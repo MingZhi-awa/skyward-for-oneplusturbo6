@@ -268,6 +268,13 @@ pub struct Names {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Device {
     pub codename: String,
+    /// `ro.product.device`, the name the phone's own build and its update
+    /// packages know it by, where it differs from the codename above. The
+    /// recovery answers to it when this is set, so that a package made for
+    /// the phone is not refused as one made for another; a phone whose
+    /// properties name it as its codename leaves this out.
+    #[serde(default)]
+    pub product_device: Option<String>,
     #[serde(default)]
     pub brand: String,
     #[serde(default)]
@@ -790,7 +797,12 @@ mod tests {
     #[test]
     fn parses_op60f0l1() {
         let cfg = DeviceConfig::parse(include_str!("../../../devices/op60f0l1.toml")).unwrap();
-        assert_eq!(cfg.device.codename, "op60f0l1", "the name the phone's own build answers to, and the one every build here has used");
+        assert_eq!(cfg.device.codename, "op60f0l1", "the name every build here has used, and the one backups are named with");
+        assert_eq!(
+            cfg.device.product_device.as_deref(),
+            Some("OP60F0L1"),
+            "the name the phone's own build and its update packages use, in capitals: the recovery answers to this one"
+        );
         assert_eq!(cfg.device.model, "OnePlus Turbo 6");
         assert!(!cfg.device.mtp, "the switch starts on adb, since the port is known on this platform to reset with both functions in it");
         assert!(cfg.device.selinux_permissive, "the recovery domain cannot reach the tee nodes");

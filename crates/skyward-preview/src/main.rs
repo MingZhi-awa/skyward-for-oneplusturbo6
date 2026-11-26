@@ -1539,6 +1539,7 @@ fn nezha(cfg: &DeviceConfig) -> DeviceInfo {
     DeviceInfo {
         model: "Xiaomi 17 Ultra by Leica".into(),
         codename: cfg.device.codename.clone(),
+        device: cfg.device.codename.clone(),
         soc: cfg.device.soc.clone(),
         cpu: Cpu { cores: 8, max_khz: Some(4_608_000) },
         ram_kib: 15_472_464,
