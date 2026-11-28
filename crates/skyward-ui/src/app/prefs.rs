@@ -31,6 +31,14 @@ pub enum Switch {
     Wlan,
     /// Show the password typed rather than a dot for each character.
     ShowPassword,
+    /// Show the key typed rather than a dot for each character.
+    ShowKey,
+    /// The model thinks before it answers.
+    Thinking,
+    /// The model may search the web as it answers.
+    WebSearch,
+    /// The model may read the links a question names.
+    ReadLinks,
     /// Keep the time zone the installed system is set to.
     SystemTimeZone,
 }

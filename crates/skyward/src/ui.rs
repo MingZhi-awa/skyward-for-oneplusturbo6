@@ -1,3 +1,4 @@
+use crate::ai;
 use crate::backup;
 use crate::decrypt::{self, Decryptor};
 use crate::filework;
@@ -1251,6 +1252,9 @@ struct Pages<'a> {
     /// Asking GitHub for Skyward's newest release, and updating to it.
     skyward_checker: Option<updates::Worker>,
     skyward_updater: Option<updates::Worker>,
+    /// Asking the model what the chat page typed, and what the key's
+    /// account holds.
+    chat: Option<ai::Worker>,
     /// The terminal page's shell, from when the page first asks for one.
     shell: Option<pty::Shell>,
     /// The USB drive plugged in, looked for each second.
@@ -1484,6 +1488,7 @@ impl<'a> Pages<'a> {
             downloader: None,
             skyward_checker: None,
             skyward_updater: None,
+            chat: None,
             shell: None,
             plugged: None,
             seen: None,
@@ -1673,6 +1678,7 @@ impl<'a> Pages<'a> {
         self.keep_settings(now)?;
         self.updates_told(now)?;
         self.skyward_told(now)?;
+        self.chat_told()?;
         self.decrypt_told(now)?;
         self.shell_told()?;
         self.take_in(drive_told, now)?;
@@ -1869,6 +1875,9 @@ impl<'a> Pages<'a> {
         if let Some(u) = &self.skyward_updater {
             fds.push(u.fd());
         }
+        if let Some(c) = &self.chat {
+            fds.push(c.fd());
+        }
         if let Some(s) = &self.systems_worker {
             fds.push(s.fd());
         }
@@ -1895,6 +1904,7 @@ impl<'a> Pages<'a> {
             || self.downloader.is_some()
             || self.skyward_checker.is_some()
             || self.skyward_updater.is_some()
+            || self.chat.is_some()
             || systems_busy;
         let joining = self.app.state.wlan.as_ref().and_then(|w| w.joined.as_ref()).is_some_and(|j| matches!(j.stage, Joining::Joining | Joining::Addressing));
         let running = match &self.shell {
@@ -2304,6 +2314,29 @@ impl Pages<'_> {
         Ok(())
     }
 
+    /// What asking the model, and asking what the account holds, told.
+    fn chat_told(&mut self) -> Result<()> {
+        let told = self.chat.as_ref().map(ai::Worker::events).unwrap_or_default();
+        let mut ended = false;
+        for ev in told {
+            match ev {
+                ai::Event::Piece(piece) => self.app.ai_said(piece),
+                ai::Event::Answered(answer) => {
+                    self.app.ai_ended(answer);
+                    ended = true;
+                }
+                ai::Event::Balance(said) => {
+                    self.app.ai_balance(said);
+                    ended = true;
+                }
+            }
+        }
+        if ended || self.chat.as_ref().is_some_and(ai::Worker::ended) {
+            self.chat = None;
+        }
+        Ok(())
+    }
+
     /// What asking the update server, and downloading the system's full
     /// package, told.
     fn updates_told(&mut self, now: u64) -> Result<()> {
@@ -2599,6 +2632,25 @@ impl Pages<'_> {
                 self.installer.as_ref().context("no installer holds an image")?.flash(partition, pick.slots(place, slot));
             }
             Effect::Cancel => self.cancel_install(now)?,
+            // An answer being written is let go of before another is asked
+            // for: one question at a time.
+            Effect::Ask { ai: asked, history, title } => {
+                if let Some(w) = self.chat.take() {
+                    w.stop();
+                }
+                let task = crate::ai::Task::Ask { ai: asked, history, title };
+                self.chat = Some(crate::ai::Worker::start(task, self.servers.clone())?);
+            }
+            Effect::StopAsking => {
+                if let Some(w) = &self.chat {
+                    w.stop();
+                }
+            }
+            // The balance is asked between questions, not over one.
+            Effect::AskBalance(settings) if self.chat.is_none() => {
+                self.chat = Some(crate::ai::Worker::start(crate::ai::Task::Balance(settings), self.servers.clone())?);
+            }
+            Effect::AskBalance(_) => {}
             Effect::ReadMounts => self.app.set_mounts(self.mounts()),
             Effect::ReadSlots => self.app.set_boot_slots(read_slots()),
             Effect::SetSlot(slot) => self.app.slot_switched(set_slot(slot), now),

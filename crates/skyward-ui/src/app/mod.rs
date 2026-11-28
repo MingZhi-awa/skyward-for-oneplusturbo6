@@ -23,6 +23,7 @@ use crate::term::{self, Term, TermKey};
 use crate::texts;
 use crate::theme::Theme;
 use crate::widgets::{self, Bar, Bolt, Cap, Layer, WlanMark};
+use skyward_ai::{Answer as AiAnswer, Balance, Piece};
 use skyward_info::DeviceInfo;
 use skyward_install::{Event, ImageKind, Outcome, Place as FlashPlace, Reflash, Refusal, Stage, Target as FlashTarget};
 use skyward_net::download::{Failure, Progress};
@@ -34,6 +35,7 @@ use skyward_systems::{Overview, Who};
 use skyward_vab::{BootSlots, Hold, Slot, SnapshotState, Standing};
 
 mod act;
+mod ai;
 mod backup;
 mod decrypt;
 mod draw;
@@ -61,6 +63,7 @@ mod update;
 mod wipe;
 mod wlan;
 
+pub use ai::*;
 pub use backup::*;
 pub use decrypt::*;
 pub use entry::*;
@@ -190,6 +193,13 @@ pub enum Screen {
     /// A network added by hand: its name, how it is protected and its
     /// password, typed on the screen's keyboard.
     WlanAdd,
+    /// Talking with a model over the network: what was asked and what it
+    /// answered, the steps it took to the web, and the question being
+    /// typed on the screen's keyboard.
+    Ai,
+    /// Where the chat is asked, with which key, and of which model, typed
+    /// on the screen's keyboard.
+    AiSetup,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -388,6 +398,13 @@ pub enum Action {
     StopSkywardUpdate,
     /// A control whose work is not wired up yet; touching it says so.
     Unavailable(&'static str),
+    /// Ask the model what is typed on the chat page.
+    Ask,
+    /// Stop the answer being written.
+    StopAsking,
+    /// Put the keyboard's typing into one field of the page that sets the
+    /// chat up.
+    Focus(AiField),
 }
 
 /// One finger, in screen pixels.
@@ -447,6 +464,16 @@ pub enum Effect {
     /// Stop waiting for the computer, for where an image goes, or for an
     /// update to be agreed to.
     Cancel,
+    /// Ask `ai` to continue `history`, telling each piece of the answer as
+    /// it comes with [`App::ai_said`] and how it ended with
+    /// [`App::ai_ended`]. A conversation's first question asks for a title
+    /// with it.
+    Ask { ai: skyward_ai::Ai, history: Vec<skyward_ai::Message>, title: bool },
+    /// Stop the answer being written.
+    StopAsking,
+    /// Ask the server what the key's account holds, telling it with
+    /// [`App::ai_balance`].
+    AskBalance(skyward_ai::Ai),
     /// Read the slot's partitions for the mount page, which has just opened.
     ReadMounts,
     /// Read what the boot control holds of the slots, telling it with

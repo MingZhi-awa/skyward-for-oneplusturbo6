@@ -148,6 +148,9 @@ impl App {
                 self.state.adding = None;
                 self.state.password.clear();
             }
+            // An answer being written is let go of as the page goes, and
+            // what came of it is kept.
+            Screen::Ai if self.state.chat.writing.is_some() => fx.push(Effect::StopAsking),
             Screen::FileJob => {
                 if self.state.job.as_ref().is_some_and(|j| j.outcome.is_none()) {
                     self.say(l.pick(WAIT_OR_STOP), now);
@@ -322,6 +325,7 @@ impl App {
                 vec![Effect::CheckSkyward]
             }
             Screen::Wlan if self.state.wlan.as_ref().is_some_and(|w| w.power == Power::On) => vec![Effect::ScanWlan],
+            Screen::Ai if self.state.chat.ai.ready() => vec![Effect::AskBalance(self.state.chat.ai.clone())],
             _ => Vec::new(),
         }
     }

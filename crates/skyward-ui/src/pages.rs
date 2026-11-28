@@ -1,8 +1,8 @@
 use crate::app::{
-    Action, BackupAt, BackupEnd, BackupJob, Check, ClashChoice, Confirm, Damage, Data, Dock, DownloadEnd, EraseStop, Field, FileKind,
+    Action, AiField, BackupAt, BackupEnd, BackupJob, Check, ClashChoice, Confirm, Damage, Data, Dock, DownloadEnd, EraseStop, Field, FileKind,
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, Pick, Place, Region, Rows,
     Screen, SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe,
-    ADDABLE, BACKUP_PARTS, DATA_PART, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, MEDIA_PART, SCREEN_OFF, TARGETS, TIME_ZONES, UTC, WIPES, installs, listed, starting,
+    ADDABLE, BACKUP_PARTS, DATA_PART, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, Step, MEDIA_PART, SCREEN_OFF, TARGETS, TIME_ZONES, UTC, WIPES, installs, listed, starting,
 };
 use crate::canvas::Canvas;
 use crate::color::Rgba;
@@ -114,6 +114,8 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::WlanPassword => wlan_password(cx),
         Screen::WlanNetwork => wlan_network(cx),
         Screen::WlanAdd => wlan_add(cx),
+        Screen::Ai => ai(cx),
+        Screen::AiSetup => ai_setup(cx),
     }
 }
 
@@ -360,7 +362,10 @@ pub fn settings(cx: &Ctx) -> Frame {
         Row::new(l.pick(texts::page::TIME_ZONE)).icon(ORANGE, Icon::Clock).trail(Trail::Value(s.zone_name())),
     ]);
     out.extend(hits(&general.rows, &[Action::Open(Screen::Language), Action::Open(Screen::TimeZone)]));
-    y = widgets::section(&mut c, t, f, general.bottom, "USB");
+    y = widgets::section(&mut c, t, f, general.bottom, l.pick(texts::ai::TITLE));
+    let chat = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::ai::SETTINGS)).icon(BLUE, Icon::Globe).trail(Trail::Value(s.chat.ai.model.as_str()))]);
+    out.extend(hits(&chat.rows, &[Action::Open(Screen::AiSetup)]));
+    y = widgets::section(&mut c, t, f, chat.bottom, "USB");
     let usb = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::settings::FILE_TRANSFER)).icon(BLUE, Icon::Usb).trail(Trail::Switch(s.file_transfer))]);
     out.extend(hits(&usb.rows, &[Action::Toggle(Switch::FileTransfer)]));
     y = widgets::footnote(&mut c, t, f, usb.bottom, l.pick(texts::settings::FILE_TRANSFER_NOTE));
@@ -1524,6 +1529,121 @@ pub fn search(cx: &Ctx) -> Frame {
     Frame { back: false, header: false, caret: Some(field.caret), dock: Some(dock), ..Frame::new(t, fit(c, t, bottom), out, find, 0.0) }
 }
 
+/// Talking with the model: what was asked and what it answered, the steps
+/// it took to the web, and the question being typed, with the keyboard at
+/// the foot of the page.
+pub fn ai(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let chat = &s.chat;
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
+    // What can be asked, and what is left to ask it with.
+    let noted = match (&chat.balance, chat.ai.ready()) {
+        (_, false) => l.pick(texts::ai::NO_KEY).to_string(),
+        (Some(Ok(balance)), true) => match balance.first() {
+            Some(money) if balance.can_spend() => texts::ai::balance(l, money.amount()),
+            Some(money) => texts::ai::balance_unavailable(l, money.amount()),
+            None => l.pick(texts::ai::BALANCE_NONE).to_string(),
+        },
+        (Some(Err(why)), true) => texts::ai::balance_failed(l, why),
+        (None, true) => l.pick(texts::ai::READY).to_string(),
+    };
+    let mut y = match chat.called() {
+        Some(name) => widgets::section_first(&mut c, t, f, t.m.content_top, name),
+        None => t.m.content_top,
+    };
+    y = widgets::footnote(&mut c, t, f, y - t.m.dp(10.0), &noted);
+    // Nothing to ask with yet: the page that says where the chat is asked
+    // is one touch away, rather than a page back in the settings.
+    if !chat.ai.ready() {
+        let setup = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::ai::SETTINGS)).icon(BLUE, Icon::Globe).trail(Trail::Arrow)]);
+        y = setup.bottom;
+        out.extend(hits(&setup.rows, &[Action::Open(Screen::AiSetup)]));
+    }
+    if chat.turns.is_empty() && chat.writing.is_none() {
+        y = widgets::paragraph(&mut c, t, f, y, l.pick(texts::ai::HINT));
+    }
+    for turn in chat.turns.iter().chain(chat.writing.iter()) {
+        y = widgets::section(&mut c, t, f, y, &turn.asked);
+        for step in &turn.steps {
+            let said = match step {
+                Step::Searched(queries) => texts::ai::searched(l, &queries.join(&l.pick(texts::list::SEPARATOR))),
+                Step::Opened(url) => texts::ai::opened(l, url),
+                Step::Found { title, url } => texts::ai::found(l, title.as_deref().unwrap_or(url)),
+                Step::Failed(why) => texts::ai::failed(l, why),
+            };
+            y = widgets::footnote(&mut c, t, f, y - t.m.dp(10.0), &said);
+        }
+        if !turn.said.is_empty() {
+            y = widgets::paragraph(&mut c, t, f, y, &turn.said);
+        } else if turn.why.is_none() && chat.writing.is_some() {
+            y = widgets::footnote(&mut c, t, f, y - t.m.dp(10.0), l.pick(texts::ai::ANSWERING));
+        }
+        if let Some(why) = &turn.why {
+            y = widgets::footnote(&mut c, t, f, y - t.m.dp(10.0), &texts::ai::why(l, why));
+        }
+    }
+    // The question being typed, and the button that sends it, or stops the
+    // answer being written.
+    let (bottom, caret) = widgets::text_field(&mut c, t, f, y + t.m.dp(12.0), &chat.draft);
+    let (label, action) = match chat.writing.is_some() {
+        true => (l.pick(texts::ai::STOP), Action::StopAsking),
+        false => (l.pick(texts::ai::SEND), Action::Ask),
+    };
+    let button = widgets::button(&mut c, t, f, bottom + t.m.dp(16.0), label);
+    out.push(Hit { rect: button, action });
+    let send = l.pick(texts::ai::SEND);
+    let (dock, _) = keyboard_dock(t, f, s, send);
+    Frame { caret: Some(caret), dock: Some(dock), ..Frame::new(t, fit(c, t, button.y + button.h), out, l.pick(texts::ai::TITLE), t.m.content_top) }
+}
+
+/// Where the chat is asked: the server, the model and the key, typed on the
+/// screen's keyboard, and what the model may do as it answers, a switch
+/// each. What is typed here is what the next question is asked with, and is
+/// kept with the rest of the settings.
+pub fn ai_setup(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let m = &t.m;
+    let ai = &s.chat.ai;
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
+    let top = m.content_top;
+    let card = |y: f32| Rect::new(m.margin, y, m.w as f32 - m.margin * 2.0, m.dp(56.0));
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::ai::ADDRESS));
+    let (below, address) = widgets::text_field(&mut c, t, f, y, &ai.base_url);
+    out.push(Hit { rect: card(y), action: Action::Focus(AiField::Address) });
+    let y = widgets::section(&mut c, t, f, below, l.pick(texts::ai::MODEL));
+    let (below, model) = widgets::text_field(&mut c, t, f, y, &ai.model);
+    out.push(Hit { rect: card(y), action: Action::Focus(AiField::Model) });
+    let y = widgets::section(&mut c, t, f, below, l.pick(texts::ai::KEY));
+    // A key is kept in the settings file as it is typed, and is shown only
+    // where asked to be.
+    let key = match s.show_key {
+        true => ai.api_key.clone(),
+        false => "•".repeat(ai.api_key.chars().count()),
+    };
+    let (below, typed) = widgets::text_field(&mut c, t, f, y, &key);
+    out.push(Hit { rect: card(y), action: Action::Focus(AiField::Key) });
+    let caret = match s.chat.field {
+        AiField::Address => address,
+        AiField::Model => model,
+        AiField::Key => typed,
+    };
+    let show = widgets::list(&mut c, t, f, below + m.card_gap, &[Row::new(l.pick(texts::ai::SHOW_KEY)).trail(Trail::Switch(s.show_key))]);
+    out.extend(hits(&show.rows, &[Action::Toggle(Switch::ShowKey)]));
+    let y = widgets::footnote(&mut c, t, f, show.bottom, l.pick(texts::ai::KEY_NOTE));
+    let y = widgets::section(&mut c, t, f, y, l.pick(texts::ai::WAY));
+    let answers = widgets::list(&mut c, t, f, y, &[
+        Row::new(l.pick(texts::ai::THINKING)).trail(Trail::Switch(ai.thinking)),
+        Row::new(l.pick(texts::ai::WEB_SEARCH)).trail(Trail::Switch(ai.web_search)),
+        Row::new(l.pick(texts::ai::READ_LINKS)).trail(Trail::Switch(ai.read_links)),
+    ]);
+    out.extend(hits(&answers.rows, &[Action::Toggle(Switch::Thinking), Action::Toggle(Switch::WebSearch), Action::Toggle(Switch::ReadLinks)]));
+    let y = widgets::footnote(&mut c, t, f, answers.bottom, l.pick(texts::ai::WEB_NOTE));
+    let (dock, _) = keyboard_dock(t, f, s, l.pick(texts::ai::DONE));
+    Frame { caret: Some(caret), dock: Some(dock), ..Frame::new(t, fit(c, t, y), out, l.pick(texts::ai::SETTINGS), top) }
+}
+
 /// Backing up: what to take, where it goes, and how.
 pub fn backup(cx: &Ctx) -> Frame {
     let (t, f, s, i, l) = (cx.t, cx.f, cx.state, cx.info, cx.state.lang);
@@ -1918,6 +2038,7 @@ pub fn advanced(cx: &Ctx) -> Frame {
         Row::new(l.pick(texts::page::FILESYSTEMS)).icon(RED, Icon::Mount),
         Row::new(l.pick(texts::page::LOGS)).icon(ORANGE, Icon::Log),
         Row::new(l.pick(texts::page::UPDATE)).icon(GREEN, Icon::Layers).trail(Trail::Value(update_value(cx))),
+        Row::new(l.pick(texts::ai::TITLE)).icon(BLUE, Icon::Globe),
     ]);
     let out = hits(&tools.rows, &[
         Action::Open(Screen::Files),
@@ -1926,6 +2047,7 @@ pub fn advanced(cx: &Ctx) -> Frame {
         Action::Open(Screen::Filesystems),
         Action::Open(Screen::Logs),
         Action::Open(Screen::Update),
+        Action::Open(Screen::Ai),
     ]);
     Frame::new(t, c, out, l.pick(texts::page::ADVANCED), top)
 }

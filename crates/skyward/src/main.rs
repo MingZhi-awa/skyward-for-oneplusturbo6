@@ -8,6 +8,8 @@ use skyward_vab::SnapshotState;
 use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "android")]
+mod ai;
+#[cfg(target_os = "android")]
 mod backup;
 #[cfg(target_os = "android")]
 mod decrypt;

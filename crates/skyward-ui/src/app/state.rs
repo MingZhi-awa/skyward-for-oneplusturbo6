@@ -180,6 +180,9 @@ pub struct State {
     /// network, and whether it shows.
     pub password: String,
     pub show_password: bool,
+    /// The key typed on the page that sets the chat up, and whether it
+    /// shows.
+    pub show_key: bool,
     /// The phone maker's update server is known, and the update page asks
     /// it.
     pub update_server: bool,
@@ -193,6 +196,9 @@ pub struct State {
     pub skyward_job: Option<SkywardJob>,
     /// How fast data went over the network joined in the last second.
     pub traffic: Traffic,
+    /// The chat with the model: what was asked and what was said, what is
+    /// being typed, and where it is asked.
+    pub chat: Chat,
 }
 
 impl Default for State {
@@ -274,6 +280,7 @@ impl Default for State {
             adding: None,
             password: String::new(),
             show_password: false,
+            show_key: false,
             update_server: false,
             check: Check::Idle,
             have: Have::Nothing,
@@ -281,6 +288,7 @@ impl Default for State {
             skyward_check: SkywardCheck::Idle,
             skyward_job: None,
             traffic: Traffic::default(),
+            chat: Chat::default(),
         }
     }
 }
@@ -366,3 +374,103 @@ impl State {
         }
     }
 }
+
+/// One question and the answer it was given, with the steps the model took
+/// to the web to give it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Talk {
+    pub asked: String,
+    /// What the model did before it answered: what it searched for, the
+    /// pages it opened or read, and what it found.
+    pub steps: Vec<Step>,
+    /// What it said; empty while it is still writing.
+    pub said: String,
+    /// Where its words came from, as it named them.
+    pub cites: Vec<String>,
+    /// The steps whole, as the server wrote them, to be given back with the
+    /// next question: a page read is restored from them.
+    pub calls: Option<serde_json::Value>,
+    /// Why it stopped without finishing, where it did.
+    pub why: Option<String>,
+}
+
+/// One step an answer took to the web.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Step {
+    /// A search, with the words searched for.
+    Searched(Vec<String>),
+    /// A page opened, or a link read: its address.
+    Opened(String),
+    /// A page that was found.
+    Found { title: Option<String>, url: String },
+    /// A step that failed, and why the server said.
+    Failed(String),
+}
+
+/// The chat with the model, as the page shows it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Chat {
+    /// Where it is asked, with which key, and of which model.
+    pub ai: skyward_ai::Ai,
+    /// What was asked and answered, oldest first.
+    pub turns: Vec<Talk>,
+    /// What is being typed.
+    pub draft: String,
+    /// The answer being written, its words coming a piece at a time.
+    pub writing: Option<Talk>,
+    /// What the key's account holds, as the server last said, or why it
+    /// could not be asked.
+    pub balance: Option<Result<Balance, String>>,
+    /// A short name for the conversation, made by the model with the first
+    /// answer; none until it is, and the first question stands in for it.
+    pub title: Option<String>,
+    /// The field of the page that sets the chat up that the keyboard types
+    /// into.
+    pub field: AiField,
+}
+
+impl Default for Chat {
+    fn default() -> Self {
+        Chat { ai: skyward_ai::Ai::default(), turns: Vec::new(), draft: String::new(), writing: None, balance: None, title: None, field: AiField::Key }
+    }
+}
+
+impl Chat {
+    /// The conversation as the server takes it: everything said so far, and
+    /// the question being asked, as a system prompt first.
+    pub fn history(&self, asking: &str) -> Vec<skyward_ai::Message> {
+        let mut out = vec![skyward_ai::Message::system(SYSTEM)];
+        for turn in &self.turns {
+            if turn.said.is_empty() {
+                continue;
+            }
+            out.push(skyward_ai::Message::user(turn.asked.clone()));
+            out.push(skyward_ai::Message { role: skyward_ai::Role::Assistant, content: turn.said.clone(), server_tool_calls: turn.calls.clone() });
+        }
+        out.push(skyward_ai::Message::user(asking));
+        out
+    }
+
+    /// Whether the next question is the conversation's first, which is the
+    /// one a title is asked for with.
+    pub fn first(&self) -> bool {
+        self.turns.is_empty() && self.title.is_none()
+    }
+
+    /// What the conversation is called: the title the model gave it, or the
+    /// first question where none has come.
+    pub fn called(&self) -> Option<&str> {
+        self.title.as_deref().or_else(|| self.turns.first().map(|turn| turn.asked.as_str()))
+    }
+
+    /// Whether anything can be asked: a key is typed, and no answer is
+    /// being written.
+    pub fn can_ask(&self, draft: &str) -> bool {
+        self.ai.ready() && self.writing.is_none() && !draft.trim().is_empty()
+    }
+}
+
+/// What the model is told of itself: it answers on a phone's recovery, where
+/// the page is a few lines and the keyboard is small, and what it says is
+/// read to rescue a phone.
+pub const SYSTEM: &str = "You are asked from inside a recovery on an Android phone, where the screen is small and the keyboard awkward. Answer briefly, in the language you are asked in, and put the short answer first. What you say is read to repair the phone: name the exact command or file where one is needed.";

@@ -1,0 +1,16 @@
+[package]
+name = "skyward-ai"
+description = "A chat with a model, asked over the network: DeepSeek's API first, and any other that keeps to the same shape."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = "1.0.154"
+# The same agent the rest of the recovery asks the network with.
+ureq = { version = "=3.5.0", default-features = false, features = ["rustls"] }

@@ -61,6 +61,22 @@ impl App {
                 self.state.follow_system_zone.toggle();
                 self.refresh();
             }
+            // The chat's own switches are the settings it is asked with,
+            // which are kept with the rest once the page is left.
+            Action::Toggle(switch @ (Switch::Thinking | Switch::WebSearch | Switch::ReadLinks)) => {
+                let ai = &mut self.state.chat.ai;
+                match switch {
+                    Switch::Thinking => ai.thinking = !ai.thinking,
+                    Switch::WebSearch => ai.web_search = !ai.web_search,
+                    Switch::ReadLinks => ai.read_links = !ai.read_links,
+                    _ => unreachable!("the switch is turned above"),
+                }
+                self.refresh();
+            }
+            Action::Toggle(Switch::ShowKey) => {
+                self.state.show_key = !self.state.show_key;
+                self.refresh();
+            }
             Action::Toggle(switch) => {
                 let on = match switch {
                     Switch::Vibrate => &mut self.state.vibrate,
@@ -70,7 +86,12 @@ impl App {
                     Switch::Signature => &mut self.state.check_signature,
                     Switch::KeepRecovery => &mut self.state.keep_recovery,
                     Switch::ShowPassword => &mut self.state.show_password,
-                    Switch::Wlan | Switch::SystemTimeZone => unreachable!("the switch is turned above"),
+                    Switch::Wlan
+                    | Switch::SystemTimeZone
+                    | Switch::ShowKey
+                    | Switch::Thinking
+                    | Switch::WebSearch
+                    | Switch::ReadLinks => unreachable!("the switch is turned above"),
                 };
                 *on = !*on;
                 let now_on = *on;
@@ -313,6 +334,34 @@ impl App {
                 self.state.next_slot = Some(slot);
                 self.refresh();
             }
+            Action::Ask => {
+                let asked = self.state.chat.draft.trim().to_string();
+                // Nothing to ask with, nothing asked, or an answer being
+                // written already: the page says which, where it has words
+                // for it.
+                if !self.state.chat.can_ask(&asked) {
+                    let chat = &self.state.chat;
+                    let why = match (chat.ai.ready(), chat.writing.is_some()) {
+                        (false, _) => Some(l.pick(texts::ai::NO_KEY)),
+                        (_, true) => Some(l.pick(texts::ai::ANSWERING)),
+                        _ => None,
+                    };
+                    if let Some(why) = why {
+                        self.say(why, now);
+                    }
+                    return Vec::new();
+                }
+                let chat = &mut self.state.chat;
+                let history = chat.history(&asked);
+                let ai = chat.ai.clone();
+                let title = chat.first();
+                chat.draft.clear();
+                chat.writing = Some(Talk { asked, steps: Vec::new(), said: String::new(), cites: Vec::new(), calls: None, why: None });
+                self.edits += 1;
+                self.refresh();
+                return vec![Effect::Ask { ai, history, title }];
+            }
+            Action::StopAsking => return vec![Effect::StopAsking],
             Action::Type(cap) if self.screen() == Screen::Terminal => return self.term_typed(cap),
             Action::Type(cap) if self.screen() == Screen::Editor => self.edit_typed(cap),
             Action::Type(cap) => return self.type_key(cap, now),
@@ -478,6 +527,12 @@ impl App {
                     self.refresh();
                 }
             }
+            Action::Focus(field) => {
+                if self.state.chat.field != field {
+                    self.state.chat.field = field;
+                    self.refresh();
+                }
+            }
             Action::ChooseSecurity => {
                 self.state.adding.as_mut().expect("the protection is on the page that adds a network").choosing = true;
                 // The page draws the row held down while its list is open.
@@ -593,6 +648,16 @@ impl App {
             Screen::Search => &mut self.state.search,
             Screen::Decrypt => &mut self.state.code,
             Screen::Rename => &mut self.state.new_name,
+            Screen::Ai => &mut self.state.chat.draft,
+            Screen::AiSetup => {
+                let field = self.state.chat.field;
+                let ai = &mut self.state.chat.ai;
+                match field {
+                    AiField::Address => &mut ai.base_url,
+                    AiField::Model => &mut ai.model,
+                    AiField::Key => &mut ai.api_key,
+                }
+            }
             Screen::WlanPassword => &mut self.state.password,
             Screen::WlanAdd => {
                 let a = self.state.adding.as_mut().expect("the page adds a network");
@@ -636,6 +701,10 @@ impl App {
                         return self.act(Action::Open(first.screen), now);
                     }
                 }
+                Screen::Ai => return self.act(Action::Ask, now),
+                // The fields are the page's own: return types nothing more
+                // into the one it is on.
+                Screen::AiSetup => {}
                 Screen::Decrypt if self.state.code.is_empty() => self.say(l.pick(texts::toast::ENTER_LOCK), now),
                 Screen::Decrypt => {
                     let code = std::mem::take(&mut self.state.code);

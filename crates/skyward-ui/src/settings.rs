@@ -58,6 +58,8 @@ pub struct Settings {
     pub install: Install,
     pub backup: Backup,
     pub logs: Logs,
+    /// Where the chat page asks, with which key, and of which model.
+    pub ai: skyward_ai::Ai,
 }
 
 /// The install page's options.
@@ -146,6 +148,7 @@ impl Settings {
                 verify: state.verify,
             },
             logs: Logs { kinds: names(&state.logs, &LOGS), to: LOG_PLACES[state.logs_to].to_string() },
+            ai: state.chat.ai.clone(),
         }
     }
 
@@ -210,6 +213,7 @@ impl Settings {
         if let Some(at) = LOG_PLACES.iter().position(|place| *place == self.logs.to) {
             state.logs_to = at;
         }
+        state.chat.ai = self.ai.clone();
     }
 }
 

@@ -43,5 +43,6 @@ skyward-mtp = { path = "../skyward-mtp" }
 skyward-omapi = { path = "../skyward-omapi" }
 skyward-programs = { path = "../skyward-programs" }
 skyward-systems = { path = "../skyward-systems" }
+skyward-ai = { path = "../skyward-ai" }
 skyward-net = { path = "../skyward-net" }
 ureq = { version = "=3.5.0", default-features = false }
