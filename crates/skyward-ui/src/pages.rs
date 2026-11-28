@@ -30,7 +30,7 @@ use std::path::Path;
 /// Who made this port, shown on the page that lists the recovery's own
 /// version. Upstream's own builds carry no name here; a port does, so that
 /// the phone's owner can tell whose build is on it.
-const PORT_AUTHOR: &str = "kirklin & Liuyimeng1024";
+const PORT_AUTHOR: &str = "kirklin & Liuyimeng1024 & MingZhi";
 
 // The colours the stock Settings fills its icons' tiles with, the same in
 // light and dark mode.
@@ -477,7 +477,7 @@ pub fn mount(cx: &Ctx) -> Frame {
 /// Who made the recovery, as the About page names them under its version.
 /// Upstream's line names its own author; a port names both, so that the
 /// phone's owner can tell whose build is on it.
-const AUTHOR: &str = "© 2026 Kirk Lin & Liuyimeng1024";
+const AUTHOR: &str = "© 2026 Kirk Lin & Liuyimeng1024 & MingZhi";
 
 /// About this device, modelled on the stock「我的设备」: the wordmark, the
 /// version and its author over a moving colour field, and the summary,
