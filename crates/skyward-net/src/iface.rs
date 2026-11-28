@@ -96,7 +96,8 @@ pub fn set_up(interface: &str, up: bool) -> Result<()> {
         let fd = socket()?;
         let mut r = request(interface)?;
         ioctl(&fd, libc::SIOCGIFFLAGS as libc::c_int, (&mut r as *mut libc::ifreq).cast(), &format!("read how {interface} stands"))?;
-        if ((r.ifr_ifru.ifru_flags & libc::IFF_UP as libc::c_short) != 0) == up {
+        let standing = unsafe { r.ifr_ifru.ifru_flags };
+        if ((standing & libc::IFF_UP as libc::c_short) != 0) == up {
             return Ok(());
         }
         unsafe {

@@ -136,6 +136,10 @@ mod tests {
         }
         assert_eq!(ime.cand(0), Some('你'));
         // Spelling again starts from the first page.
+        let mut ime = Ime { chinese: true, ..Ime::default() };
+        for ch in "yi".chars() {
+            ime.type_letter(ch);
+        }
         ime.turn();
         ime.back();
         ime.type_letter('i');
