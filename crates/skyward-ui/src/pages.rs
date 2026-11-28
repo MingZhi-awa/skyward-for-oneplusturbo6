@@ -1,5 +1,5 @@
 use crate::app::{
-    Action, AiField, BackupAt, BackupEnd, BackupJob, Check, ClashChoice, Confirm, Damage, Data, Dock, DownloadEnd, EraseStop, Field, FileKind,
+    Action, AiField, Effort, BackupAt, BackupEnd, BackupJob, Check, ClashChoice, Confirm, Damage, Data, Dock, DownloadEnd, EraseStop, Field, FileKind,
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, Pick, Place, Region, Rows,
     Screen, SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe,
     ADDABLE, BACKUP_PARTS, DATA_PART, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, Step, MEDIA_PART, SCREEN_OFF, TARGETS, TIME_ZONES, UTC, WIPES, installs, listed, starting,
@@ -1633,15 +1633,49 @@ pub fn ai_setup(cx: &Ctx) -> Frame {
     out.extend(hits(&show.rows, &[Action::Toggle(Switch::ShowKey)]));
     let y = widgets::footnote(&mut c, t, f, show.bottom, l.pick(texts::ai::KEY_NOTE));
     let y = widgets::section(&mut c, t, f, y, l.pick(texts::ai::WAY));
-    let answers = widgets::list(&mut c, t, f, y, &[
-        Row::new(l.pick(texts::ai::THINKING)).trail(Trail::Switch(ai.thinking)),
-        Row::new(l.pick(texts::ai::WEB_SEARCH)).trail(Trail::Switch(ai.web_search)),
-        Row::new(l.pick(texts::ai::READ_LINKS)).trail(Trail::Switch(ai.read_links)),
-    ]);
-    out.extend(hits(&answers.rows, &[Action::Toggle(Switch::Thinking), Action::Toggle(Switch::WebSearch), Action::Toggle(Switch::ReadLinks)]));
+    let mut rows = vec![Row::new(l.pick(texts::ai::THINKING)).trail(Trail::Switch(ai.thinking))];
+    let mut opens = vec![Action::Toggle(Switch::Thinking)];
+    // The strength of the thinking is a thing to choose only where it
+    // thinks: nothing is worked out with the thinking off.
+    if ai.thinking {
+        rows.push(Row::new(l.pick(texts::ai::EFFORT)).trail(Trail::Choice(l.pick(effort_name(ai.effort)))));
+        opens.push(Action::ChooseEffort);
+    }
+    rows.push(Row::new(l.pick(texts::ai::WEB_SEARCH)).trail(Trail::Switch(ai.web_search)));
+    opens.push(Action::Toggle(Switch::WebSearch));
+    rows.push(Row::new(l.pick(texts::ai::READ_LINKS)).trail(Trail::Switch(ai.read_links)));
+    opens.push(Action::Toggle(Switch::ReadLinks));
+    let tone = match s.chat.effort_open {
+        true => Tone::page(&t.pressed()),
+        false => Tone::page(t),
+    };
+    let answers = widgets::list_toned(&mut c, t, f, y, &rows, &tone);
+    out.extend(hits(&answers.rows, &opens));
     let y = widgets::footnote(&mut c, t, f, answers.bottom, l.pick(texts::ai::WEB_NOTE));
     let (dock, _) = keyboard_dock(t, f, s, l.pick(texts::ai::DONE));
+    // The strengths open over the page, under the row that names them; a
+    // touch anywhere off the list closes it.
+    if s.chat.effort_open {
+        out.clear();
+        out.push(Hit { rect: Rect::new(0.0, 0.0, m.w as f32, c.h as f32), action: Action::CloseChoices });
+        let names = Effort::ALL.map(|effort| l.pick(effort_name(effort)));
+        let chosen = Effort::ALL.iter().position(|effort| *effort == ai.effort);
+        let held = Effort::ALL.iter().position(|effort| s.held == Some(Action::PickEffort(*effort)));
+        let list = widgets::choices(&mut c, t, f, answers.rows[1], &names, chosen, held);
+        out.extend(hits(&list, &Effort::ALL.map(Action::PickEffort)));
+        return Frame::new(t, c, out, l.pick(texts::ai::SETTINGS), top);
+    }
     Frame { caret: Some(caret), dock: Some(dock), ..Frame::new(t, fit(c, t, y), out, l.pick(texts::ai::SETTINGS), top) }
+}
+
+/// What a strength of the thinking is called on the page that sets the chat
+/// up.
+fn effort_name(effort: Effort) -> Text {
+    match effort {
+        Effort::Low => texts::ai::EFFORT_LOW,
+        Effort::High => texts::ai::EFFORT_HIGH,
+        Effort::Max => texts::ai::EFFORT_MAX,
+    }
 }
 
 /// Backing up: what to take, where it goes, and how.

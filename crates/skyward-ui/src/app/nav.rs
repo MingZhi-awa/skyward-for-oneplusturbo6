@@ -139,6 +139,12 @@ impl App {
             }
             Screen::WlanNetwork => self.state.details = None,
             // A list open over the page closes first.
+            Screen::AiSetup if self.state.chat.effort_open => {
+                self.state.chat.effort_open = false;
+                self.refresh();
+                return fx;
+            }
+            // A list open over the page closes first.
             Screen::WlanAdd => {
                 if let Some(a) = self.state.adding.as_mut().filter(|a| a.choosing) {
                     a.choosing = false;

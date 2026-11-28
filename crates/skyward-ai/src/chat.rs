@@ -262,6 +262,11 @@ pub fn body(ai: &Ai, history: &[Message], title: bool) -> String {
         "stream": true,
         "thinking": { "type": thinking },
     });
+    // The strength of the thinking is told only where it is asked for: with
+    // the thinking turned off, nothing is worked out to be strong about.
+    if ai.thinking {
+        asked["reasoning_effort"] = serde_json::json!(ai.effort.said());
+    }
     if !tools.is_empty() {
         asked["tools"] = Value::Array(tools);
     }
@@ -445,6 +450,7 @@ impl std::error::Error for Stopped {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Effort;
 
     fn asking(text: &str) -> Value {
         serde_json::from_str(&body(&Ai::default(), &[Message::user(text)], false)).unwrap()
@@ -457,8 +463,12 @@ mod tests {
         assert_eq!(asked["stream"], true);
         assert_eq!(asked["messages"][0]["role"], "user");
         assert_eq!(asked["thinking"]["type"], "disabled");
+        assert!(asked.get("reasoning_effort").is_none(), "nothing is worked out with the thinking off");
         let thinking: Value = serde_json::from_str(&body(&Ai { thinking: true, ..Ai::default() }, &[Message::user("hi")], false)).unwrap();
         assert_eq!(thinking["thinking"]["type"], "enabled");
+        assert_eq!(thinking["reasoning_effort"], "high", "the server's own strength when none is chosen");
+        let deep: Value = serde_json::from_str(&body(&Ai { thinking: true, effort: Effort::Max, ..Ai::default() }, &[Message::user("hi")], false)).unwrap();
+        assert_eq!(deep["reasoning_effort"], "max");
     }
 
     #[test]

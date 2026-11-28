@@ -11,6 +11,38 @@ pub const BASE: &str = "https://api.deepseek.com";
 /// recovery starts with.
 pub const MODEL: &str = "deepseek-flash";
 
+/// How hard the model works the answer out before it gives it, where it
+/// thinks at all: the server's `reasoning_effort`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Effort {
+    Low,
+    High,
+    Max,
+}
+
+impl Effort {
+    /// The efforts, from the least to the most, in the order a list gives
+    /// them.
+    pub const ALL: [Effort; 3] = [Effort::Low, Effort::High, Effort::Max];
+
+    /// What the server is told, as `reasoning_effort`.
+    pub fn said(self) -> &'static str {
+        match self {
+            Effort::Low => "low",
+            Effort::High => "high",
+            Effort::Max => "max",
+        }
+    }
+}
+
+impl Default for Effort {
+    /// What the server works to when told nothing.
+    fn default() -> Self {
+        Effort::High
+    }
+}
+
 /// What a chat is asked with.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -24,6 +56,9 @@ pub struct Ai {
     /// The model thinks before it answers, which takes longer and costs
     /// more, and reads better on a question that needs working out.
     pub thinking: bool,
+    /// How hard it works the answer out while it thinks.
+    #[serde(default)]
+    pub effort: Effort,
     /// The model may search the web as it pleases, and answer with the
     /// pages it found. Searched and read on the server: nothing is fetched
     /// here but the answer.
@@ -39,6 +74,7 @@ impl Default for Ai {
             model: MODEL.into(),
             api_key: String::new(),
             thinking: false,
+            effort: Effort::default(),
             web_search: true,
             read_links: true,
         }
@@ -81,5 +117,8 @@ mod tests {
     fn what_is_not_kept_is_what_a_recovery_starts_with() {
         let kept: Ai = serde_json::from_str(r#"{ "api_key": "sk-x" }"#).unwrap();
         assert_eq!(kept, Ai { api_key: "sk-x".into(), ..Ai::default() });
+        assert_eq!(kept.effort, Effort::High, "a key kept before the effort was has the server's own");
+        let deep: Ai = serde_json::from_str(r#"{ "thinking": true, "effort": "max" }"#).unwrap();
+        assert_eq!((deep.thinking, deep.effort), (true, Effort::Max));
     }
 }

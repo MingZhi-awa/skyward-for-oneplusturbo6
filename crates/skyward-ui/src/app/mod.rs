@@ -24,6 +24,8 @@ use crate::texts;
 use crate::theme::Theme;
 use crate::widgets::{self, Bar, Bolt, Cap, Layer, WlanMark};
 use skyward_ai::{Answer as AiAnswer, Balance, Piece};
+
+pub use skyward_ai::Effort;
 use skyward_info::DeviceInfo;
 use skyward_install::{Event, ImageKind, Outcome, Place as FlashPlace, Reflash, Refusal, Stage, Target as FlashTarget};
 use skyward_net::download::{Failure, Progress};
@@ -405,6 +407,11 @@ pub enum Action {
     /// Put the keyboard's typing into one field of the page that sets the
     /// chat up.
     Focus(AiField),
+    /// Open the strengths of the thinking over the page that sets the chat
+    /// up.
+    ChooseEffort,
+    /// Take one of them.
+    PickEffort(Effort),
 }
 
 /// One finger, in screen pixels.

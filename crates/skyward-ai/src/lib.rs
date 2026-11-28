@@ -12,4 +12,4 @@ pub mod config;
 
 pub use balance::{Balance, Money, ask as balance};
 pub use chat::{Answer, Citation, Message, Piece, Role, Stopped, stream};
-pub use config::Ai;
+pub use config::{Ai, Effort};

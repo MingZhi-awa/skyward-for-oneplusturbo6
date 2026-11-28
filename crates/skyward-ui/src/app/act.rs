@@ -551,7 +551,22 @@ impl App {
                 self.refresh();
             }
             Action::CloseChoices => {
-                self.state.adding.as_mut().expect("the protections open on the page that adds a network").choosing = false;
+                if let Some(a) = self.state.adding.as_mut() {
+                    a.choosing = false;
+                }
+                self.state.chat.effort_open = false;
+                self.refresh();
+            }
+            Action::ChooseEffort => {
+                self.state.chat.effort_open = true;
+                // The page draws the row held down while its list is open.
+                self.row_press = None;
+                self.row_art = None;
+                self.refresh();
+            }
+            Action::PickEffort(effort) => {
+                self.state.chat.ai.effort = effort;
+                self.state.chat.effort_open = false;
                 self.refresh();
             }
             // Asking takes a network, which the WLAN page joins.

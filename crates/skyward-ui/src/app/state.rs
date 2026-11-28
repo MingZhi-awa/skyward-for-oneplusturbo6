@@ -427,11 +427,14 @@ pub struct Chat {
     /// The field of the page that sets the chat up that the keyboard types
     /// into.
     pub field: AiField,
+    /// The strengths of the thinking are open over the page that sets the
+    /// chat up.
+    pub effort_open: bool,
 }
 
 impl Default for Chat {
     fn default() -> Self {
-        Chat { ai: skyward_ai::Ai::default(), turns: Vec::new(), draft: String::new(), writing: None, balance: None, title: None, field: AiField::Key }
+        Chat { ai: skyward_ai::Ai::default(), turns: Vec::new(), draft: String::new(), writing: None, balance: None, title: None, field: AiField::Key, effort_open: false }
     }
 }
 
