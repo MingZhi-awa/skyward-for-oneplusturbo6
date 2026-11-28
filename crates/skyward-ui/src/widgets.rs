@@ -4,6 +4,7 @@ use crate::fmt;
 use crate::font::{Face, Fonts};
 use crate::geom::Rect;
 use crate::icons::{self, Icon};
+use crate::ime::Ime;
 use crate::lang::Lang;
 use crate::sprite::Sprite;
 use crate::texts;
@@ -2787,6 +2788,11 @@ pub enum Cap {
     Enter,
     /// Show another layer.
     Show(Layer),
+    /// The key of the row above the letters that picks the language they
+    /// spell in, Chinese or another.
+    Ime,
+    /// Character `i` of the row above the letters.
+    Candidate(usize),
 }
 
 /// The keys between the side keys of each row, per layer. Together the
@@ -2800,6 +2806,9 @@ fn rows(layer: Layer) -> [&'static str; 3] {
 }
 
 const KEY_H_DP: f32 = 44.0;
+/// The row the input method's characters and the key that picks the
+/// letters' language sit on, above the keys, as tall as a key.
+const CANDIDATES_H_DP: f32 = KEY_H_DP;
 /// How round a key's corners are.
 pub const KEY_RADIUS_DP: f32 = 6.0;
 const KEY_GAP_X_DP: f32 = 5.5;
@@ -2811,19 +2820,21 @@ const KEYBOARD_TOP_DP: f32 = 9.0;
 /// Room under the last row for the gesture area of the screen's edge.
 const KEYBOARD_BOTTOM_DP: f32 = 26.0;
 
-/// How tall the keyboard is on this theme's screen.
+/// How tall the keyboard is on this theme's screen: the row of the input
+/// method over four rows of keys.
 pub fn keyboard_height(t: &Theme) -> f32 {
     let m = &t.m;
-    m.dp(KEYBOARD_TOP_DP + 4.0 * KEY_H_DP + 3.0 * KEY_GAP_Y_DP + KEYBOARD_BOTTOM_DP)
+    m.dp(KEYBOARD_TOP_DP + CANDIDATES_H_DP + KEY_GAP_Y_DP + 4.0 * KEY_H_DP + 3.0 * KEY_GAP_Y_DP + KEYBOARD_BOTTOM_DP)
 }
 
 /// The on-screen keyboard across the bottom of the screen, its top at
-/// `top`: four rows of keys in `layer`, `pressed` drawn held down, and the
-/// return key saying what it does; its words in `l`. Returns where each
-/// key answers a touch, the gaps between keys shared out among their
-/// neighbours.
+/// `top`: the row of the input method over four rows of keys in `layer`,
+/// `pressed` drawn held down, and the return key saying what it does; its
+/// words in `l`, and the letters spelled in `ime` along with the characters
+/// they may be. Returns where each key answers a touch, the gaps between
+/// keys shared out among their neighbours.
 #[allow(clippy::too_many_arguments)]
-pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: Layer, pressed: Option<Cap>, enter: &str) -> Vec<(Rect, Cap)> {
+pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, ime: &Ime, top: f32, layer: Layer, pressed: Option<Cap>, enter: &str) -> Vec<(Rect, Cap)> {
     let m = &t.m;
     let w = m.w as f32;
     let (panel, key, side, ink, shadow) = if t.dark {
@@ -2835,7 +2846,7 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
     let (pad, gx, gy, kh) = (m.dp(KEYBOARD_PAD_X_DP), m.dp(KEY_GAP_X_DP), m.dp(KEY_GAP_Y_DP), m.dp(KEY_H_DP));
     let kw = (w - pad * 2.0 - gx * 9.0) / 10.0;
     let side_w = kw * 1.35;
-    let row_top = |r: usize| top + m.dp(KEYBOARD_TOP_DP) + r as f32 * (kh + gy);
+    let row_top = |r: usize| top + m.dp(KEYBOARD_TOP_DP + CANDIDATES_H_DP + KEY_GAP_Y_DP) + r as f32 * (kh + gy);
     let mut keys: Vec<(Rect, Cap)> = Vec::new();
     let [first, second, third] = rows(layer);
     // Rows of plain keys are centred: the letters' second row sits half a
@@ -2881,10 +2892,41 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
 
     let radius = m.dp(KEY_RADIUS_DP);
     let glyph_px = m.dp(21.0);
+    // The row over the keys: the key that picks what the letters spell, the
+    // letters spelled and not yet taken for a character, and the characters
+    // they may be.
+    let bar_y = top + m.dp(KEYBOARD_TOP_DP);
+    let bar_h = m.dp(CANDIDATES_H_DP);
+    keys.push((Rect::new(left, bar_y, kw, bar_h), Cap::Ime));
+    let cands: Vec<char> = ime.cands().collect();
+    let spelled_from = left + kw + gx;
+    let spelled_to = w - pad;
+    let spelled_w = match ime.composing.is_empty() {
+        true => 0.0,
+        false => (c.text_width(&f.body, &ime.composing, m.sub_px) + inset * 2.0).min((spelled_to - spelled_from) * 0.5),
+    };
+    if !ime.composing.is_empty() {
+        c.text_vc(&f.body, &ime.composing, spelled_from + inset, bar_y + bar_h / 2.0, m.sub_px, mix(ink, panel, 0.45), Some(spelled_w - inset * 2.0));
+    }
+    if !cands.is_empty() {
+        let (from, to) = (spelled_from + spelled_w, spelled_to);
+        let each = ((to - from) / cands.len() as f32).min(kw * 1.2);
+        let start = from + ((to - from) - each * cands.len() as f32).max(0.0) / 2.0;
+        for (i, ch) in cands.iter().enumerate() {
+            let r = Rect::new(start + i as f32 * each, bar_y, each, bar_h);
+            c.text_center(&f.heading, &ch.to_string(), r.x + r.w / 2.0, r.y + r.h / 2.0, glyph_px, ink);
+            keys.push((r, Cap::Candidate(i)));
+        }
+    }
     for &(r, cap) in &keys {
+        if matches!(cap, Cap::Candidate(_)) {
+            // The characters of the row have no key of their own to fill.
+            continue;
+        }
         let plain = matches!(cap, Cap::Char(_) | Cap::Space);
         let base = match cap {
             Cap::Enter => t.pal.accent,
+            Cap::Ime if ime.chinese => t.pal.accent,
             Cap::Shift if layer == Layer::Shifted => key,
             _ if plain => key,
             _ => side,
@@ -2905,6 +2947,15 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
             Cap::Show(Layer::Digits) => c.text_center(&f.heading, "123", cx, cy, m.sub_px, ink),
             Cap::Show(Layer::Symbols) => c.text_center(&f.heading, "#+=", cx, cy, m.sub_px, ink),
             Cap::Show(_) => c.text_center(&f.heading, "abc", cx, cy, m.sub_px, ink),
+            // The language the letters spell in, the accent while it is
+            // Chinese.
+            Cap::Ime => {
+                let label = if ime.chinese { "中" } else { "Aa" };
+                let color = if ime.chinese { Rgba::rgb(255, 255, 255) } else { ink };
+                c.text_center(&f.heading, label, cx, cy, m.sub_px, color);
+            }
+            // The characters of the row are drawn as the row is laid out.
+            Cap::Candidate(_) => {}
             Cap::Shift => {
                 // An upward arrow, solid while the next letter is a capital.
                 let s = m.dp(9.0);
@@ -3425,8 +3476,8 @@ mod tests {
         let enter = |keys: &[(Rect, Cap)]| keys.iter().find(|(_, cap)| *cap == Cap::Enter).unwrap().0;
         let space = |keys: &[(Rect, Cap)]| keys.iter().find(|(_, cap)| *cap == Cap::Space).unwrap().0;
         let top = 2608.0 - keyboard_height(&t);
-        let plain = keyboard(&mut c, &t, &f, Lang::En, top, Layer::Letters, None, "Join");
-        let wide = keyboard(&mut c, &t, &f, Lang::Ru, top, Layer::Letters, None, "Расшифровка");
+        let plain = keyboard(&mut c, &t, &f, Lang::En, &Default::default(), top, Layer::Letters, None, "Join");
+        let wide = keyboard(&mut c, &t, &f, Lang::Ru, &Default::default(), top, Layer::Letters, None, "Расшифровка");
         assert!(enter(&wide).w > enter(&plain).w && space(&wide).w < space(&plain).w);
         assert_eq!(enter(&wide).x + enter(&wide).w, enter(&plain).x + enter(&plain).w, "from the same right end");
         assert!(space(&wide).w > enter(&wide).w, "and the space bar stays the widest key");
@@ -3454,7 +3505,7 @@ mod tests {
             let enters =
                 [texts::page::DECRYPT, texts::wlan::CONNECT, texts::common::DONE, texts::search::SEARCH, texts::keyboard::ENTER, texts::keyboard::NEW_LINE];
             for enter in enters {
-                keyboard(&mut c, &t, &f, l, 1000.0, Layer::Letters, None, l.pick(enter));
+                keyboard(&mut c, &t, &f, l, &Default::default(), 1000.0, Layer::Letters, None, l.pick(enter));
             }
             keypad(&mut c, &t, &f, l, 1000.0, None);
             let slides: Vec<&str> = file["confirm"].as_table().unwrap().values().map(|text| text.as_str().unwrap()).collect();

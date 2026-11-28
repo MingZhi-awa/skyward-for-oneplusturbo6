@@ -13,6 +13,7 @@ use crate::focus::{self, Group, Spot, Stop};
 use crate::font::Fonts;
 use crate::geom::Rect;
 use crate::glow::{self, GlowClock};
+use crate::ime::Ime;
 use crate::lang::{same, Lang, Text};
 use crate::motion::{self, Spring};
 use crate::pages::{self, Band, Ctx};

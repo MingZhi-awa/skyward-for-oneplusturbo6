@@ -118,6 +118,9 @@ pub struct State {
     pub search: String,
     /// The on-screen keyboard's layer.
     pub layer: Layer,
+    /// The letters the keyboard spells as Chinese, and those spelled and
+    /// not yet taken for a character.
+    pub ime: Ime,
     /// The key of the on-screen keyboard, or the choice of a list open over
     /// the page, a finger holds down.
     pub held: Option<Action>,
@@ -253,6 +256,7 @@ impl Default for State {
             code: String::new(),
             search: String::new(),
             layer: Layer::Letters,
+            ime: Ime::default(),
             held: None,
             files: Folder::new("/"),
             storage: Folder::new(""),

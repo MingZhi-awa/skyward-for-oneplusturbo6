@@ -94,7 +94,7 @@ impl Term {
             // and the shell both take as erasing.
             Cap::Backspace => vec![0x7f],
             Cap::Enter => vec![b'\r'],
-            Cap::Shift | Cap::Show(_) => {
+            Cap::Shift | Cap::Show(_) | Cap::Ime | Cap::Candidate(_) => {
                 self.ctrl = ctrl;
                 Vec::new()
             }

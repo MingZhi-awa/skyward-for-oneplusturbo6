@@ -362,9 +362,20 @@ impl App {
                 return vec![Effect::Ask { ai, history, title }];
             }
             Action::StopAsking => return vec![Effect::StopAsking],
-            Action::Type(cap) if self.screen() == Screen::Terminal => return self.term_typed(cap),
-            Action::Type(cap) if self.screen() == Screen::Editor => self.edit_typed(cap),
-            Action::Type(cap) => return self.type_key(cap, now),
+            Action::Type(cap) => {
+                // Letters are spelled as Chinese first, where the keyboard
+                // is set to; what the input method does not take, the page
+                // types as it always did.
+                let Some(cap) = self.through_ime(cap) else { return Vec::new() };
+                return match self.screen() {
+                    Screen::Terminal => self.term_typed(cap),
+                    Screen::Editor => {
+                        self.edit_typed(cap);
+                        Vec::new()
+                    }
+                    _ => self.type_key(cap, now),
+                };
+            }
             Action::TermKey(key) if self.screen() == Screen::Editor => {
                 let ed = self.state.editor.as_mut().expect("the editor page shows a file");
                 match key {
@@ -685,8 +696,51 @@ impl App {
         }
     }
 
-    /// A key of the on-screen keyboard. A capital lasts one letter; return
-    /// opens the first result of a search, and runs a terminal's command.
+    /// A key given to the input method first: the key that picks what the
+    /// letters spell turns it from one language to the other and forgets
+    /// what was spelled, letters spell Chinese while it is set to, backspace
+    /// takes back a letter before it takes back a character, and a
+    /// character of the row over the keys goes to the page as the key of
+    /// that character would. Anything the input method does not take is
+    /// handed back for the page to do with.
+    fn through_ime(&mut self, cap: Cap) -> Option<Cap> {
+        let letters = matches!(self.state.layer, Layer::Letters | Layer::Shifted);
+        match cap {
+            Cap::Ime => {
+                self.state.ime.chinese = !self.state.ime.chinese;
+                self.state.ime.picked();
+            }
+            Cap::Candidate(i) => {
+                let ch = self.state.ime.cand(i)?;
+                self.state.ime.picked();
+                self.refresh_dock();
+                return Some(Cap::Char(ch));
+            }
+            Cap::Char(ch) if letters && self.state.ime.chinese => {
+                if !self.state.ime.type_letter(ch) {
+                    return Some(cap);
+                }
+            }
+            Cap::Backspace if self.state.ime.spelling() => self.state.ime.back(),
+            // The space bar takes the first character of what is spelled,
+            // and is a space where the letters spell no syllable at all.
+            Cap::Space if self.state.ime.spelling() => {
+                let first = self.state.ime.cand(0);
+                self.state.ime.picked();
+                self.refresh_dock();
+                return Some(first.map_or(Cap::Space, Cap::Char));
+            }
+            _ => return Some(cap),
+        }
+        self.refresh_dock();
+        None
+    }
+
+    /// A key of the on-screen keyboard, after the input method has had it:
+    /// a character or a space goes where the page types, Enter does what the
+    /// page makes of it, and the layer keys change the keyboard. A capital
+    /// lasts one letter; return opens the first result of a search, and runs
+    /// a terminal's command.
     fn type_key(&mut self, cap: Cap, now: u64) -> Vec<Effect> {
         let (l, layer) = (self.state.lang, self.state.layer);
         match cap {
@@ -710,6 +764,8 @@ impl App {
                 self.state.layer = if self.state.layer == Layer::Shifted { Layer::Letters } else { Layer::Shifted };
             }
             Cap::Show(layer) => self.state.layer = layer,
+            // The input method took these before the page saw them.
+            Cap::Ime | Cap::Candidate(_) => {}
             Cap::Enter => match self.screen() {
                 Screen::Search => {
                     if let Some(first) = search::find_on(&self.state.search, l, |screen| self.state.offers(screen)).first() {

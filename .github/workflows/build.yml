@@ -27,6 +27,20 @@ env:
   STOCK_VERSION: PLU110_16.0.9.405
 
 jobs:
+  test:
+    name: Test what the pages do
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the toolchain rust-toolchain.toml names
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # The pages are plain Rust and run wherever they are built: the
+      # keyboard, the texts and the way each page lays out are tested here
+      # before an image is made of them.
+      - name: Test the pages
+        run: cargo test --locked -p skyward-ui
+
   tools:
     name: Build the recovery service and the packer
     runs-on: ubuntu-24.04

@@ -708,7 +708,7 @@ fn code(cx: &Ctx, mut c: Canvas, user: u32, keys: Keys, checking: bool) -> Frame
     let bottom = match keys {
         Keys::Letters => {
             let top = m.h as f32 - widgets::keyboard_height(t);
-            let caps = widgets::keyboard(&mut c, t, f, l, top, s.layer, s.key_held(), l.pick(texts::page::DECRYPT));
+            let caps = widgets::keyboard(&mut c, t, f, l, &s.ime, top, s.layer, s.key_held(), l.pick(texts::page::DECRYPT));
             if !checking {
                 out.extend(caps.into_iter().map(|(rect, cap)| Hit { rect, action: Action::Type(cap) }));
             }
@@ -1480,7 +1480,7 @@ pub fn wipe(cx: &Ctx) -> Frame {
 fn keyboard_dock(t: &Theme, f: &Fonts, s: &State, enter: &str) -> (Dock, f32) {
     let height = widgets::keyboard_height(t);
     let mut c = Canvas::new(t.m.w, height.ceil() as u32);
-    let keys = widgets::keyboard(&mut c, t, f, s.lang, 0.0, s.layer, s.key_held(), enter);
+    let keys = widgets::keyboard(&mut c, t, f, s.lang, &s.ime, 0.0, s.layer, s.key_held(), enter);
     let hits = keys.into_iter().map(|(rect, cap)| Hit { rect, action: Action::Type(cap) }).collect();
     (Dock { canvas: c, hits }, t.m.h as f32 - height)
 }

@@ -118,6 +118,8 @@ impl App {
             Cap::Enter => ed.newline(),
             Cap::Shift => self.state.layer = if layer == Layer::Shifted { Layer::Letters } else { Layer::Shifted },
             Cap::Show(shown) => self.state.layer = shown,
+            // The input method took these before the page saw them.
+            Cap::Ime | Cap::Candidate(_) => {}
         }
         self.edits += 1;
         // The keyboard stays as it was while its keys do.
