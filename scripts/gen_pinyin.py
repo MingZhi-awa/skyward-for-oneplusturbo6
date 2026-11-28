@@ -60,5 +60,8 @@ for rd in sorted(table):
             break
     lines.append(rd + '\t' + ''.join(picks))
 
-open('/workspace/skyward/resources/pinyin.txt', 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
+import os
+
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'resources', 'pinyin.txt')
+open(out, 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
 print('syllables', len(lines), 'chars', len(chars))

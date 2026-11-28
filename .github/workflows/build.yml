@@ -59,7 +59,7 @@ jobs:
         run: cargo build --locked --release -p skyward-pack
       - name: Gather them
         run: |
-          mkdir tools
+          mkdir -p tools
           cp target/aarch64-linux-android/release/skyward target/release/skyward-pack tools/
           cp target/system-init/aarch64-linux-android/release/system-init tools/
       - uses: actions/upload-artifact@v7

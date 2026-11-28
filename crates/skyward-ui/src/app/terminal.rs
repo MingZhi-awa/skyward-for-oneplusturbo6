@@ -111,7 +111,9 @@ mod tests {
         let mut app = App::new(Screen::Settings, W, H, PPD);
         assert_eq!(tap(&mut app, &f, &i, Action::Open(Screen::Terminal)), vec![Effect::StartShell("/".into())], "the page asks for a shell the first time");
         let (rows, cols) = app.term_size(&f);
-        assert!(rows >= 20 && cols >= 40, "a screen of {rows} rows by {cols}");
+        // The row of the input method over the keys takes one row of the
+        // shell's screen.
+        assert!(rows >= 19 && cols >= 40, "a screen of {rows} rows by {cols}");
         app.term_started(rows, cols);
         assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Char('l'))), vec![Effect::TermInput(b"l".to_vec())]);
         assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::TermInput(b"\r".to_vec())]);
