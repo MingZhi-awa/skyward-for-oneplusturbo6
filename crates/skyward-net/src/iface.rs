@@ -4,6 +4,7 @@
 use anyhow::{Context, Result};
 use std::net::Ipv4Addr;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::time::{Duration, Instant};
 
 /// The kernel's `struct rtentry`, which the C library of a phone does not
 /// describe.
@@ -77,19 +78,45 @@ pub fn hardware_address(interface: &str) -> Result<[u8; 6]> {
 }
 
 /// Bring the interface up, or take it down.
+///
+/// An interface already as it is asked to be is left alone. One the driver
+/// has just made may answer that it is busy while the chip's firmware is
+/// still coming in -- the qca driver does, for a second or two after wlan0
+/// appears -- so the setting is asked for again until it takes, or the wait
+/// is over.
 pub fn set_up(interface: &str, up: bool) -> Result<()> {
-    let fd = socket()?;
-    let mut r = request(interface)?;
-    ioctl(&fd, libc::SIOCGIFFLAGS as libc::c_int, (&mut r as *mut libc::ifreq).cast(), &format!("read how {interface} stands"))?;
-    unsafe {
-        if up {
-            r.ifr_ifru.ifru_flags |= libc::IFF_UP as libc::c_short;
-        } else {
-            r.ifr_ifru.ifru_flags &= !(libc::IFF_UP as libc::c_short);
-        }
-    }
+    /// How long an interface that has just appeared is asked again while it
+    /// answers that it is busy, and how often.
+    const SETTLE_WAIT: Duration = Duration::from_secs(10);
+    const SETTLE_STEP: Duration = Duration::from_millis(100);
+
     let doing = if up { format!("bring {interface} up") } else { format!("take {interface} down") };
-    ioctl(&fd, libc::SIOCSIFFLAGS as libc::c_int, (&mut r as *mut libc::ifreq).cast(), &doing)
+    let until = Instant::now() + SETTLE_WAIT;
+    loop {
+        let fd = socket()?;
+        let mut r = request(interface)?;
+        ioctl(&fd, libc::SIOCGIFFLAGS as libc::c_int, (&mut r as *mut libc::ifreq).cast(), &format!("read how {interface} stands"))?;
+        if ((r.ifr_ifru.ifru_flags & libc::IFF_UP as libc::c_short) != 0) == up {
+            return Ok(());
+        }
+        unsafe {
+            if up {
+                r.ifr_ifru.ifru_flags |= libc::IFF_UP as libc::c_short;
+            } else {
+                r.ifr_ifru.ifru_flags &= !(libc::IFF_UP as libc::c_short);
+            }
+        }
+        let answer = unsafe { libc::ioctl(fd.as_raw_fd(), libc::SIOCSIFFLAGS as libc::c_int, (&mut r as *mut libc::ifreq).cast::<libc::c_void>()) };
+        if answer == 0 {
+            return Ok(());
+        }
+        let e = std::io::Error::last_os_error();
+        let busy = e.raw_os_error() == Some(libc::EBUSY);
+        if !busy || Instant::now() >= until {
+            return Err(anyhow::Error::new(e).context(doing));
+        }
+        std::thread::sleep(SETTLE_STEP);
+    }
 }
 
 /// Give the interface `address` in a network of `mask`; what is sent to

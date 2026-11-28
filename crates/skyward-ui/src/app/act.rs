@@ -710,6 +710,7 @@ impl App {
                 self.state.ime.chinese = !self.state.ime.chinese;
                 self.state.ime.picked();
             }
+            Cap::Turn => self.state.ime.turn(),
             Cap::Candidate(i) => {
                 let ch = self.state.ime.cand(i)?;
                 self.state.ime.picked();
@@ -765,7 +766,7 @@ impl App {
             }
             Cap::Show(layer) => self.state.layer = layer,
             // The input method took these before the page saw them.
-            Cap::Ime | Cap::Candidate(_) => {}
+            Cap::Ime | Cap::Candidate(_) | Cap::Turn => {}
             Cap::Enter => match self.screen() {
                 Screen::Search => {
                     if let Some(first) = search::find_on(&self.state.search, l, |screen| self.state.offers(screen)).first() {

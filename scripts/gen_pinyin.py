@@ -9,7 +9,7 @@
 from pypinyin import pinyin, Style
 from wordfreq import top_n_list
 
-MAX_PER_SYLLABLE = 16
+MAX_PER_SYLLABLE = 32
 EXTRA = 800
 
 order = top_n_list('zh', 300000)

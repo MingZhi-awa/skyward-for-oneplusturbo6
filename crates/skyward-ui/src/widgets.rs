@@ -2793,6 +2793,9 @@ pub enum Cap {
     Ime,
     /// Character `i` of the row above the letters.
     Candidate(usize),
+    /// The key of the row above the letters that shows the next page of
+    /// characters.
+    Turn,
 }
 
 /// The keys between the side keys of each row, per layer. Together the
@@ -2898,9 +2901,13 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, ime: &Ime, top: f
     let bar_y = top + m.dp(KEYBOARD_TOP_DP);
     let bar_h = m.dp(CANDIDATES_H_DP);
     keys.push((Rect::new(left, bar_y, kw, bar_h), Cap::Ime));
+    // The key that turns to the characters past the page shown, at the
+    // row's right end.
+    let turn = Rect::new(w - pad - kw, bar_y, kw, bar_h);
+    keys.push((turn, Cap::Turn));
     let cands: Vec<char> = ime.cands().collect();
     let spelled_from = left + kw + gx;
-    let spelled_to = w - pad;
+    let spelled_to = turn.x - gx;
     let spelled_w = match ime.composing.is_empty() {
         true => 0.0,
         false => (c.text_width(&f.body, &ime.composing, m.sub_px) + inset * 2.0).min((spelled_to - spelled_from) * 0.5),
@@ -2956,6 +2963,12 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, ime: &Ime, top: f
             }
             // The characters of the row are drawn as the row is laid out.
             Cap::Candidate(_) => {}
+            // The way to the characters the row has no room for, pale once
+            // there are none.
+            Cap::Turn => {
+                let color = if ime.more() { ink } else { mix(ink, side, 0.55) };
+                c.text_center(&f.heading, "›", cx, cy, glyph_px, color);
+            }
             Cap::Shift => {
                 // An upward arrow, solid while the next letter is a capital.
                 let s = m.dp(9.0);
